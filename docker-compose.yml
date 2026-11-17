@@ -1,0 +1,37 @@
+# Um agente por servico/container. A mesma imagem serve todos: o que muda e o
+# `environment` (config) + `env_file` (segredos) + `volumes` (dados).
+#
+# Segredos: `OPENROUTER_API_KEY` vem de ./.secrets/openrouter.env; o token do
+# bot, de ./.secrets/<agente>/telegram.env (um bot/token por agente no BotFather).
+#
+# Subir tudo:  docker compose up -d --build
+# Subir um:    docker compose up -d --build agenda
+
+name: assist-bots
+
+x-agente: &agente
+  build: .
+  image: assist-bot:latest
+  restart: unless-stopped
+  user: "1000:1000"
+
+services:
+  agenda:
+    <<: *agente
+    container_name: assist-agenda
+    env_file:
+      - ./.secrets/openrouter.env
+      - ./.secrets/agenda/telegram.env
+    environment:
+      AGENT: agenda
+      TIMEZONE: America/Sao_Paulo
+      STATE_DIR: /app/.state
+      HORA_PADRAO: "08:00"
+      TOLERANCIA_MIN: "120"
+      AUDIO_ENABLED: "true"
+      TRANSCRIBE_MODEL: google/gemini-2.5-flash
+      TRANSCRIBE_MAX_SEG: "120"
+      AUDIO_MAX_MB: "10"
+      LLM_FALLBACK: "true"
+    volumes:
+      - ./data/agenda:/app/.state
