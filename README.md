@@ -122,8 +122,9 @@ VPS (setup unico): usuario `deploy` no grupo `docker`, Docker Engine + compose v
 chave SSH, e `~/assist-bots/` com `data/agenda/` e `.secrets/agenda/`. O deploy
 grava essas pastas e um `.env` com a `TAG` da imagem.
 
-Primeiro deploy: rode o pipeline uma vez e torne o pacote **Public**
-(GitHub → Packages → assist-bots → Package settings → Change visibility).
+Primeiro deploy: rode o pipeline uma vez. Se o `pull` na VPS falhar com `401`
+(pacote privado), torne-o público (GitHub → Packages → assist-bots → Package
+settings → Change visibility); em repo público o pacote costuma já sair público.
 
 Arquivos: `docker-compose.prod.yml` e `.github/workflows/{ci,publish,deploy,retention}.yml`.
 
