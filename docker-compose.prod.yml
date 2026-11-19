@@ -33,3 +33,8 @@ services:
       LLM_FALLBACK: "true"
     volumes:
       - ./data/agenda:/app/.state
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
