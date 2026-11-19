@@ -88,7 +88,8 @@ jobs:
             printf 'TAG=%s\n' '${{ steps.tag.outputs.tag }}' > .env
             docker compose -f docker-compose.prod.yml pull
             docker compose -f docker-compose.prod.yml up -d
-            docker image prune -f
+            docker image prune -af \
+              --filter "label=org.opencontainers.image.source=https://github.com/kellermanm0ta/assist-bots"
             sleep 3
             docker compose -f docker-compose.prod.yml ps
             docker compose -f docker-compose.prod.yml logs --tail=50 agenda
