@@ -1,0 +1,35 @@
+# Deploy na VPS: puxa a imagem publicada no GHCR (sem build).
+#
+# O workflow `.github/workflows/deploy.yml` grava `.env` com `TAG=sha-<curto>`
+# (ou `latest`) e envia este arquivo + `.secrets/` para ~/assist-bots na VPS.
+# O estado (lembretes.json) fica no volume do host, fora da imagem.
+#
+#   cd ~/assist-bots
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Rollback: editar TAG no .env (sha anterior) e repetir up -d.
+name: assist-bots
+
+services:
+  agenda:
+    image: ghcr.io/kellermanm0ta/assist-bots:${TAG:-latest}
+    container_name: assist-agenda
+    restart: unless-stopped
+    user: "1000:1000"
+    env_file:
+      - ./.secrets/openrouter.env
+      - ./.secrets/agenda/telegram.env
+    environment:
+      AGENT: agenda
+      TIMEZONE: America/Sao_Paulo
+      STATE_DIR: /app/.state
+      HORA_PADRAO: "08:00"
+      TOLERANCIA_MIN: "120"
+      AUDIO_ENABLED: "true"
+      TRANSCRIBE_MODEL: google/gemini-2.5-flash
+      TRANSCRIBE_MAX_SEG: "120"
+      AUDIO_MAX_MB: "10"
+      LLM_FALLBACK: "true"
+    volumes:
+      - ./data/agenda:/app/.state

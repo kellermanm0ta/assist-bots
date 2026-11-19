@@ -58,6 +58,8 @@ text + deterministic parser still work.
 .secrets/openrouter.env          shared OpenRouter key (audio + fallback)
 .secrets/<agent>/telegram.env    one bot/token per agent
 data/<agent>/                    lembretes.json, bot.log, bot.pid
+docker-compose.prod.yml          VPS deploy: GHCR image, no build
+.github/workflows/               ci, publish (GHCR), deploy (SSH), retention
 ```
 
 `config.py` loads `.secrets/openrouter.env` and `.secrets/<AGENT>/telegram.env`
@@ -105,6 +107,8 @@ record right before sending.
 - `docker-entrypoint.sh` — `exec`s `telegram_bot.py` as PID 1.
 - `docker-compose.yml` — `x-agente` anchor; non-secret config in `environment`,
   secrets via `env_file`, state via `./data/<agent>:/app/.state`.
+- `docker-compose.prod.yml` — VPS variant: `image: ghcr.io/...` (no `build`),
+  `TAG` from `.env`; same env/volume. See README "Deploy" for CI/CD.
 
 ## Verification (no test suite)
 

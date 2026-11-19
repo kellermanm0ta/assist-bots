@@ -1,0 +1,62 @@
+name: ci
+
+# Valida branches de trabalho e PRs. A `main` e validada pelo `publish`
+# (que tambem faz o build da imagem).
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --no-cache-dir -r requirements-bot.txt
+      - name: Compilar
+        run: python -m compileall -q .
+      - name: Smoke test do parser
+        run: |
+          python - <<'PY'
+          import parser
+          from datetime import datetime
+
+          # exemplo de referencia do README
+          agora = datetime(2026, 11, 17, 22, 0)
+          r = parser.interpretar(
+              "me lembre em 18/11 as 8h de tomar remedio, repetir todos os dias", agora
+          )
+          assert r.tipo == "criar", r
+          assert r.primeira.isoformat() == "2026-11-18T08:00:00", r
+
+          # regressao: "todos os dias" deve cair na proxima ocorrencia, nao "amanha"
+          agora = datetime(2026, 11, 19, 12, 0)
+          r = parser.interpretar("me lembre todos os dias as 18h de tomar remedio", agora)
+          assert r.tipo == "criar", r
+          assert r.primeira.isoformat() == "2026-11-19T18:00:00", r
+
+          # regressao: recorrencia sem data explicita (caminho do fallback LLM)
+          r = parser.de_campos("pagar agua", None, None, "FREQ=MONTHLY;BYMONTHDAY=30", agora)
+          assert r.tipo == "criar", r
+          assert r.primeira.isoformat() == "2026-11-30T08:00:00", r
+          print("parser ok")
+          PY
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build (sem push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

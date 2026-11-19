@@ -1,0 +1,96 @@
+name: deploy
+
+# Deploy automatico apos um `publish` bem-sucedido na main.
+# `workflow_dispatch` permite redeploy manual/rollback escolhendo a tag.
+on:
+  workflow_run:
+    workflows: [publish]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Imagem em ghcr.io (ex: sha-ab12cd3). Vazio = latest."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+# Nunca dois deploys ao mesmo tempo (o bot usa long-poll com token unico).
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolver tag da imagem
+        id: tag
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ -n "${INPUT_TAG:-}" ]; then
+            echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
+          elif [ -n "${RUN_SHA:-}" ]; then
+            echo "tag=sha-${RUN_SHA::7}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Render .secrets a partir dos GitHub Secrets
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALLOWED_USER_IDS: ${{ secrets.TELEGRAM_ALLOWED_USER_IDS }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          umask 077
+          mkdir -p .secrets/agenda
+          {
+            printf 'TELEGRAM_BOT_TOKEN=%s\n' "$TELEGRAM_BOT_TOKEN"
+            printf 'TELEGRAM_ALLOWED_USER_IDS=%s\n' "$TELEGRAM_ALLOWED_USER_IDS"
+          } > .secrets/agenda/telegram.env
+          printf 'OPENROUTER_API_KEY=%s\n' "$OPENROUTER_API_KEY" > .secrets/openrouter.env
+
+      - name: Empacotar compose + secrets
+        run: tar -czf deploy.tgz docker-compose.prod.yml .secrets
+
+      - name: Enviar para a VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          source: deploy.tgz
+          target: /home/${{ secrets.VPS_USER }}/assist-bots
+
+      - name: Deploy na VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            set -euo pipefail
+            cd ~/assist-bots
+            mkdir -p data/agenda
+            tar -xzf deploy.tgz
+            rm -f deploy.tgz
+            chmod 700 .secrets
+            chmod 600 .secrets/openrouter.env .secrets/agenda/telegram.env
+            printf 'TAG=%s\n' '${{ steps.tag.outputs.tag }}' > .env
+            docker compose -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.prod.yml up -d
+            docker image prune -f
+            sleep 3
+            docker compose -f docker-compose.prod.yml ps
+            docker compose -f docker-compose.prod.yml logs --tail=50 agenda
+            docker compose -f docker-compose.prod.yml logs --tail=100 agenda | grep -q "Agenda iniciado" \
+              || { echo "health check falhou: bot nao iniciou"; exit 1; }

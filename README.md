@@ -104,6 +104,31 @@ docker compose up -d --build
 docker compose logs -f agenda
 ```
 
+## Deploy (GitHub Actions → GHCR → VPS)
+
+Pipeline: `push main` → **ci** valida → **publish** publica
+`ghcr.io/kellermanm0ta/assist-bots:{latest,sha-xxxx}` → **deploy** puxa e sobe na
+VPS por SSH. O pacote e **publico**, entao a VPS nao precisa autenticar no registry.
+
+Segredos (GitHub → Settings → Secrets and variables → Actions):
+
+| Secret | Uso |
+|---|---|
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_IDS` | `.secrets/agenda/telegram.env` na VPS |
+| `OPENROUTER_API_KEY` | `.secrets/openrouter.env` na VPS |
+| `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` | acesso SSH (`VPS_PORT` opcional) |
+
+VPS (setup unico): usuario `deploy` no grupo `docker`, Docker Engine + compose v2,
+chave SSH, e `~/assist-bots/` com `data/agenda/` e `.secrets/agenda/`. O deploy
+grava essas pastas e um `.env` com a `TAG` da imagem.
+
+Primeiro deploy: rode o pipeline uma vez e torne o pacote **Public**
+(GitHub → Packages → assist-bots → Package settings → Change visibility).
+
+Arquivos: `docker-compose.prod.yml` e `.github/workflows/{ci,publish,deploy,retention}.yml`.
+
+Rollback: Actions → **deploy** → Run workflow, informando `tag` (ex: `sha-ab12cd3`).
+
 ## Rodar no host (sem Docker)
 
 ```bash
