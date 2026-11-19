@@ -328,17 +328,27 @@ def proxima_ocorrencia(rec: str, dtstart: datetime, depois: datetime) -> datetim
     return regra.after(depois, inc=False)
 
 
-def _proximo_dia_mes(dia: int, hora: time, agora: datetime) -> datetime | None:
-    for offset in range(0, 14):
-        ano = agora.year + (agora.month - 1 + offset) // 12
-        mes = (agora.month - 1 + offset) % 12 + 1
-        try:
-            cand = datetime.combine(date(ano, mes, dia), hora)
-        except ValueError:
-            continue
-        if cand > agora:
-            return cand
-    return None
+def primeira_ocorrencia(
+    rec: str,
+    agora: datetime,
+    hora: time | None = None,
+    data: date | None = None,
+) -> datetime | None:
+    """Primeira ocorrencia de `rec` estritamente depois de `agora`.
+
+    Ancora a regra nas coordenadas explicitas (`data`/`hora`) quando existem,
+    para preservar a fase; senao usa `agora` (com `hora`, se dada). Assim o
+    primeiro lembrete cai na proxima ocorrencia real da regra (proximo dia 30,
+    proxima terca, proxima hora, ...) e nao em "amanha". Vale para qualquer
+    escala: MINUTELY, HOURLY, DAILY, WEEKLY, MONTHLY, YEARLY.
+    """
+    if data is not None:
+        base = datetime.combine(data, hora or hora_padrao())
+    elif hora is not None:
+        base = datetime.combine(agora.date(), hora)
+    else:
+        base = agora
+    return proxima_ocorrencia(rec, base, agora)
 
 
 # ---------------------------------------------------------------------------
@@ -366,7 +376,9 @@ def interpretar(texto: str, agora: datetime) -> Resultado:
         evento = _evento(original, mapa, m.start("evento"))
         if not evento:
             return Resultado("erro", mensagem="Faltou o evento do lembrete.")
-        primeira = datetime.combine(agora.date() + timedelta(days=1), hora)
+        primeira = primeira_ocorrencia("FREQ=DAILY", agora, hora=hora)
+        if primeira is None:
+            return Resultado("erro", mensagem="Nao ha proxima ocorrencia.")
         return Resultado("criar", texto=evento, primeira=primeira, rrule="FREQ=DAILY")
 
     m = _ATALHO_SEMANAL.match(norm)
@@ -381,12 +393,11 @@ def interpretar(texto: str, agora: datetime) -> Resultado:
         evento = _evento(original, mapa, m.start("evento"))
         if not evento:
             return Resultado("erro", mensagem="Faltou o evento do lembrete.")
-        alvo = list(DIAS).index(singular)
-        delta = (alvo - agora.weekday()) % 7 or 7
-        primeira = datetime.combine(agora.date() + timedelta(days=delta), hora)
-        return Resultado(
-            "criar", texto=evento, primeira=primeira, rrule=f"FREQ=WEEKLY;BYDAY={cod}"
-        )
+        rec = f"FREQ=WEEKLY;BYDAY={cod}"
+        primeira = primeira_ocorrencia(rec, agora, hora=hora)
+        if primeira is None:
+            return Resultado("erro", mensagem="Nao ha proxima ocorrencia.")
+        return Resultado("criar", texto=evento, primeira=primeira, rrule=rec)
 
     m = _ATALHO_MENSAL.match(norm)
     if m:
@@ -397,15 +408,14 @@ def interpretar(texto: str, agora: datetime) -> Resultado:
             return Resultado("erro", mensagem="Hora invalida.")
         if not evento:
             return Resultado("erro", mensagem="Faltou o evento do lembrete.")
-        primeira = _proximo_dia_mes(dia, hora, agora)
+        rec = f"FREQ=MONTHLY;BYMONTHDAY={dia}"
+        try:
+            primeira = primeira_ocorrencia(rec, agora, hora=hora)
+        except Exception:
+            return Resultado("erro", mensagem="Dia do mes invalido.")
         if primeira is None:
             return Resultado("erro", mensagem="Dia do mes invalido.")
-        return Resultado(
-            "criar",
-            texto=evento,
-            primeira=primeira,
-            rrule=f"FREQ=MONTHLY;BYMONTHDAY={dia}",
-        )
+        return Resultado("criar", texto=evento, primeira=primeira, rrule=rec)
 
     m = _ATALHO_INTERVALO.match(norm)
     if m:
@@ -426,10 +436,7 @@ def interpretar(texto: str, agora: datetime) -> Resultado:
         if not evento:
             return Resultado("erro", mensagem="Faltou o evento do lembrete.")
         rec = f"FREQ={freq};INTERVAL={n}"
-        base = agora if hora is None else datetime.combine(agora.date(), hora)
-        if base <= agora:
-            base = agora
-        primeira = proxima_ocorrencia(rec, base, agora)
+        primeira = primeira_ocorrencia(rec, agora, hora=hora)
         if primeira is None:
             return Resultado("erro", mensagem="Nao ha proxima ocorrencia.")
         return Resultado("criar", texto=evento, primeira=primeira, rrule=rec)
@@ -443,8 +450,7 @@ def interpretar(texto: str, agora: datetime) -> Resultado:
         if not evento:
             return Resultado("erro", mensagem="Faltou o evento do lembrete.")
         rec = "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
-        base = datetime.combine(agora.date(), hora)
-        primeira = proxima_ocorrencia(rec, base, agora)
+        primeira = primeira_ocorrencia(rec, agora, hora=hora)
         if primeira is None:
             return Resultado("erro", mensagem="Nao ha proxima ocorrencia.")
         return Resultado("criar", texto=evento, primeira=primeira, rrule=rec)
@@ -471,23 +477,20 @@ def interpretar(texto: str, agora: datetime) -> Resultado:
     if not evento:
         return Resultado("erro", mensagem="Faltou o evento do lembrete.")
 
-    primeira = datetime.combine(data, hora)
-    if primeira <= agora:
-        if rec:
-            avancada = proxima_ocorrencia(rec, primeira, agora)
-            if avancada is None:
-                return Resultado("erro", mensagem="Nao ha proxima ocorrencia.")
-            primeira = avancada
-        else:
+    if rec:
+        try:
+            rrule.rrulestr(rec, dtstart=datetime.combine(data, hora))
+        except Exception:
+            return Resultado("erro", mensagem="Recorrencia invalida.")
+        primeira = primeira_ocorrencia(rec, agora, hora=hora, data=data)
+        if primeira is None:
+            return Resultado("erro", mensagem="Nao ha proxima ocorrencia.")
+    else:
+        primeira = datetime.combine(data, hora)
+        if primeira <= agora:
             return Resultado(
                 "erro", mensagem="Essa data e hora ja passaram. Escolha um horario futuro."
             )
-
-    if rec and rec.startswith("FREQ="):
-        try:
-            rrule.rrulestr(rec, dtstart=primeira)
-        except Exception:
-            return Resultado("erro", mensagem="Recorrencia invalida.")
     return Resultado("criar", texto=evento, primeira=primeira, rrule=rec)
 
 
@@ -516,24 +519,22 @@ def de_campos(
             data = date.fromisoformat(data_iso)
         except ValueError:
             return Resultado("erro", mensagem="Data invalida.")
-    elif rec:
-        data = agora.date() + timedelta(days=1)
     else:
-        return Resultado("erro", mensagem="Faltou a data do lembrete.")
+        data = None
 
-    primeira = datetime.combine(data, hora)
     if rec:
         try:
-            rrule.rrulestr(rec, dtstart=primeira)
+            primeira = primeira_ocorrencia(rec, agora, hora=hora, data=data)
         except Exception:
             return Resultado("erro", mensagem="Recorrencia invalida.")
+        if primeira is None:
+            return Resultado("erro", mensagem="Nao ha proxima ocorrencia.")
+    else:
+        if data is None:
+            return Resultado("erro", mensagem="Faltou a data do lembrete.")
+        primeira = datetime.combine(data, hora)
         if primeira <= agora:
-            avancada = proxima_ocorrencia(rec, primeira, agora)
-            if avancada is None:
-                return Resultado("erro", mensagem="Nao ha proxima ocorrencia.")
-            primeira = avancada
-    elif primeira <= agora:
-        return Resultado("erro", mensagem="Essa data e hora ja passaram.")
+            return Resultado("erro", mensagem="Essa data e hora ja passaram.")
 
     return Resultado("criar", texto=evento, primeira=primeira, rrule=rec)
 
