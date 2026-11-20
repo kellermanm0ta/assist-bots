@@ -43,6 +43,42 @@ jobs:
             echo "tag=latest" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Validar segredos
+        # Evita falha silenciosa: sem chave o bot sobe, loga um warning e
+        # o audio/catch-up param. Tambem pega o caso "secret contem caminho".
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALLOWED_USER_IDS: ${{ secrets.TELEGRAM_ALLOWED_USER_IDS }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+
+          [ -n "$OPENROUTER_API_KEY" ] || fail "OPENROUTER_API_KEY vazio"
+          case "$OPENROUTER_API_KEY" in
+            /*|~*) fail "OPENROUTER_API_KEY parece caminho de arquivo, nao chave" ;;
+            */*)  fail "OPENROUTER_API_KEY contem '/': provavelmente um caminho" ;;
+          esac
+          case "$OPENROUTER_API_KEY" in
+            *[[:space:]]*) fail "OPENROUTER_API_KEY contem espaco ou quebra de linha" ;;
+          esac
+          [ "${#OPENROUTER_API_KEY}" -ge 20 ] || fail "OPENROUTER_API_KEY curta demais"
+          case "$OPENROUTER_API_KEY" in
+            sk-or-v1-*) ;;
+            *) echo "::warning::OPENROUTER_API_KEY sem o prefixo sk-or-v1-" ;;
+          esac
+
+          [[ "$TELEGRAM_BOT_TOKEN" =~ ^[0-9]+:[A-Za-z0-9_-]+$ ]] \
+            || fail "TELEGRAM_BOT_TOKEN fora do formato <id>:<token>"
+
+          [ -n "$TELEGRAM_ALLOWED_USER_IDS" ] || fail "TELEGRAM_ALLOWED_USER_IDS vazio"
+          [[ "$TELEGRAM_ALLOWED_USER_IDS" =~ ^[0-9]+([,[:space:]]+[0-9]+)*$ ]] \
+            || fail "TELEGRAM_ALLOWED_USER_IDS deve conter apenas ids numericos"
+
+          # Fingerprints (nunca o valor) para conferir rotacao no log
+          echo "OPENROUTER_API_KEY: ${#OPENROUTER_API_KEY} chars, sha256 $(printf %s "$OPENROUTER_API_KEY" | sha256sum | cut -c1-8)"
+          echo "TELEGRAM_BOT_TOKEN: ${#TELEGRAM_BOT_TOKEN} chars, sha256 $(printf %s "$TELEGRAM_BOT_TOKEN" | sha256sum | cut -c1-8)"
+          echo "TELEGRAM_ALLOWED_USER_IDS: $(printf %s "$TELEGRAM_ALLOWED_USER_IDS" | tr -cd ',' | wc -c) separador(es)"
+
       - name: Render .secrets a partir dos GitHub Secrets
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -91,7 +127,7 @@ jobs:
             chmod 600 .secrets/openrouter.env .secrets/agenda/telegram.env
             printf 'TAG=%s\n' '${{ steps.tag.outputs.tag }}' > .env
             docker compose -f docker-compose.prod.yml pull
-            docker compose -f docker-compose.prod.yml up -d
+            docker compose -f docker-compose.prod.yml up -d --force-recreate
             docker image prune -af \
               --filter "label=org.opencontainers.image.source=https://github.com/kellermanm0ta/assist-bots"
             sleep 3

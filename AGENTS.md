@@ -129,3 +129,7 @@ docker compose up -d --build && docker compose logs -f agenda
   Conflict`.
 - Restarts reload `lembretes.json`; recurring reminders are recomputed from
   their stored `proxima`, so no notification is lost (within tolerance).
+- Secrets live only in GitHub Secrets; the deploy renders `.secrets/*.env` on
+  the runner and overwrites the VPS copy every run, so editing those files on
+  the VPS does not persist. Rotate with `gh secret set` + `gh workflow run
+  deploy.yml` (see README, "Rotacao de chave").

@@ -131,6 +131,51 @@ Arquivos: `docker-compose.prod.yml` e `.github/workflows/{ci,publish,deploy,rete
 
 Rollback: Actions → **deploy** → Run workflow, informando `tag` (ex: `sha-ab12cd3`).
 
+### Rotacao de chave (OpenRouter, Telegram)
+
+O arquivo na VPS e **copia derivada** do GitHub Secret: o deploy o reescreve
+inteiro a cada run. Editar `.secrets/*.env` na VPS a mao nao sobrevive ao
+proximo deploy — rotacione sempre pelo secret.
+
+1. Crie a chave nova no provedor e **mantenha a antiga ativa**.
+2. Grave o valor no secret (nunca como caminho, sem aspas e sem newline):
+
+   ```bash
+   gh secret set OPENROUTER_API_KEY     # prompt interativo: cole o valor puro
+   ```
+
+3. Dispare o deploy sem precisar de commit:
+
+   ```bash
+   gh workflow run deploy.yml
+   gh run watch "$(gh run list --workflow=deploy --limit 1 \
+     --json databaseId -q '.[0].databaseId')"
+   ```
+
+4. Confira o que o container esta usando (fingerprint, nunca o valor):
+
+   ```bash
+   cd ~/assist-bots
+   grep -c '^OPENROUTER_API_KEY=sk-or-v1-' .secrets/openrouter.env   # 1 = ok
+   docker compose -f docker-compose.prod.yml exec agenda \
+     sh -c 'printf %s "$OPENROUTER_API_KEY" | sha256sum'
+   ```
+
+   O log do deploy imprime o mesmo fingerprint (`chars` + `sha256` curto) no
+   passo **Validar segredos**, entao da para comparar sem expor nada.
+
+5. Valide o uso (audio ou frase ambigua) e so entao revogue a chave antiga.
+
+O passo **Validar segredos** aborta o deploy antes de qualquer SSH quando um
+secret esta vazio, parece caminho (`/...`, `~/...`), tem espaco/quebra de linha
+ou foge do formato esperado — em vez de subir um container com a chave errada.
+
+Para forcar a recriacao do container apos a rotacao:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --force-recreate
+```
+
 ## Rodar no host (sem Docker)
 
 ```bash
