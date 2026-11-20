@@ -9,7 +9,7 @@ RUN python -m venv /app/.venv \
 
 COPY config.py logsetup.py telegram_api.py lembretes.py parser.py agendador.py \
      transcricao.py runtime.py telegram_bot.py ./
-COPY .opencode/agent ./.opencode/agent
+COPY .opencode/agents ./.opencode/agents
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 
 RUN chmod +x /app/docker-entrypoint.sh \

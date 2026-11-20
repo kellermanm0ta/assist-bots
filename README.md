@@ -63,7 +63,7 @@ cancela em massa.
 ## Layout
 
 ```
-.opencode/agent/agenda.md        persona/tom do agente
+.opencode/agents/agenda.md       persona/tom do agente
 .secrets/openrouter.env          chave da OpenRouter (compartilhada)
 .secrets/agenda/telegram.env     token do bot (um por agente)
 data/agenda/                     lembretes.json, bot.log, bot.pid
@@ -77,7 +77,8 @@ o segundo guarda `chat_id`, lembretes e transcricoes pessoais. Ambos ja estao no
 
 | Var | Significado | Default |
 |---|---|---|
-| `AGENT` | carrega `.opencode/agent/<AGENT>.md` e nomeia o logger | `agenda` |
+| `AGENT` | carrega `.opencode/agents/<AGENT>.md` e nomeia o logger | `agenda` |
+| `BOT_NAME` | nome exibido nas saudacoes (sobrepoe `bot_name:`) | `AGENT` capitalizado |
 | `TIMEZONE` | fuso dos horarios | `America/Sao_Paulo` |
 | `STATE_DIR` | lembretes.json / log / pid | `data/<AGENT>` |
 | `HORA_PADRAO` | hora do atalho "todos os dias" | `08:00` |

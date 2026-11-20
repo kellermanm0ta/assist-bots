@@ -36,7 +36,8 @@ flowchart LR
 
 | Var | Meaning | Default |
 |---|---|---|
-| `AGENT` | loads `.opencode/agent/<AGENT>.md`; logger name | `agenda` |
+| `AGENT` | loads `.opencode/agents/<AGENT>.md`; logger name | `agenda` |
+| `BOT_NAME` | display name used in greetings (overrides `bot_name:`) | `AGENT` capitalized |
 | `TIMEZONE` | zone for all schedules | `America/Sao_Paulo` |
 | `STATE_DIR` | lembretes.json / bot.log / bot.pid | `data/<AGENT>` |
 | `HORA_PADRAO` | time for "todos os dias" shortcut | `08:00` |
@@ -54,7 +55,7 @@ text + deterministic parser still work.
 ## Layout
 
 ```
-.opencode/agent/<agent>.md       persona/tone; `bot_name:`/`model:` optional
+.opencode/agents/<agent>.md      persona/tone; `model:` optional (V2 frontmatter)
 .secrets/openrouter.env          shared OpenRouter key (audio + fallback)
 .secrets/<agent>/telegram.env    one bot/token per agent
 data/<agent>/                    lembretes.json, bot.log, bot.pid

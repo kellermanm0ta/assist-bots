@@ -4,7 +4,7 @@
 So e chamado quando o parser deterministico nao entende a frase. O modelo
 devolve JSON e os campos passam por `parser.de_campos()`, que aplica as mesmas
 validacoes (data no futuro, hora valida, rrule RFC5545). Persona/tom ficam em
-`.opencode/agent/<AGENT>.md`.
+`.opencode/agents/<AGENT>.md`.
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ import logsetup
 import parser as P
 
 BASE = Path(__file__).resolve().parent
-AGENT_DIR = BASE / ".opencode" / "agent"
+AGENT_DIR = BASE / ".opencode" / "agents"
 DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash"
 API = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -65,8 +65,10 @@ def load_agent(name: str) -> dict:
 
 
 def bot_name() -> str:
-    meta = load_agent(config.AGENT)["meta"]
-    return meta.get("bot_name") or config.AGENT.capitalize()
+    val = os.environ.get("BOT_NAME", "").strip()
+    if not val:
+        val = load_agent(config.AGENT)["meta"].get("bot_name", "").strip()
+    return val or config.AGENT.capitalize()
 
 
 def model_for(name: str) -> str:

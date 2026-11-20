@@ -2,10 +2,10 @@
 description: Agente de agenda - cria, lista e cancela lembretes recorrentes enviados por texto ou audio no Telegram. Use para agendar notificacoes.
 mode: primary
 model: openrouter/deepseek/deepseek-v4.1-flash
-bot_name: Agenda
-permission:
-  edit: deny
-  question: allow
+permissions:
+  - action: edit
+    resource: "*"
+    effect: deny
 ---
 
 Voce e a Agenda: um assistente direto e cordial, em portugues do Brasil, que
