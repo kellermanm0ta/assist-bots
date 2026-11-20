@@ -58,9 +58,9 @@ jobs:
           printf 'OPENROUTER_API_KEY=%s\n' "$OPENROUTER_API_KEY" > .secrets/openrouter.env
 
       - name: Empacotar compose + secrets
-        run: |
-          umask 077
-          tar -czf deploy.tgz docker-compose.prod.yml .secrets
+        # Sem umask 077 aqui: o scp-action roda em container com outro UID e
+        # precisa ler o arquivo. A restricao de permissao e feita na VPS.
+        run: tar -czf deploy.tgz docker-compose.prod.yml .secrets
 
       - name: Enviar para a VPS
         uses: appleboy/scp-action@v0.1.7
