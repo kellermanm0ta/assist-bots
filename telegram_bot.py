@@ -54,6 +54,7 @@ def build_help() -> str:
         "Comandos:\n"
         "  /listar   - lembretes ativos\n"
         "  /cancelar <id|evento> - cancela um lembrete\n"
+        "  /apagar_inativos - apaga de vez o historico cancelado/concluido\n"
         "  /id       - mostra seu user id"
     )
 
@@ -116,6 +117,30 @@ def _listar(chat_id: int) -> str:
     if not ativos:
         return "Nenhum lembrete ativo."
     return "Lembretes ativos:\n" + "\n".join(_resumo(item) for item in ativos)
+
+
+def _apagar_inativos(chat_id: int, arg: str = "") -> str:
+    """Purga do store os lembretes cancelados/concluidos (ativo: false)."""
+    inativos = [
+        item
+        for item in lembretes.listar(chat_id, incluir_inativos=True)
+        if not item.get("ativo")
+    ]
+    if not inativos:
+        return "Nenhum lembrete inativo para apagar."
+
+    if arg.strip().lower() not in ("confirmar", "sim"):
+        linhas = "\n".join(f"#{item['id']} - {item['texto']}" for item in inativos[:10])
+        resto = len(inativos) - 10
+        extra = f"\n... e mais {resto}." if resto > 0 else ""
+        return (
+            f"{len(inativos)} lembrete(s) inativo(s) serao apagados de vez:\n"
+            f"{linhas}{extra}\n\n"
+            "Confirme com /apagar_inativos confirmar"
+        )
+
+    removidos = lembretes.apagar_inativos(chat_id)
+    return f"{removidos} lembrete(s) inativo(s) apagado(s)."
 
 
 def _processar(chat_id: int, texto: str, reply_to=None, origem: str = "texto") -> None:
@@ -254,6 +279,10 @@ def handle_message(msg: dict) -> None:
     if texto == "/cancelar" or texto.startswith("/cancelar "):
         alvo = texto[len("/cancelar") :].strip()
         tg.send(chat_id, _cancelar(chat_id, alvo), reply_to=message_id)
+        return
+    if texto == "/apagar_inativos" or texto.startswith("/apagar_inativos "):
+        arg = texto[len("/apagar_inativos") :].strip()
+        tg.send(chat_id, _apagar_inativos(chat_id, arg), reply_to=message_id)
         return
     if texto.startswith("/"):
         tg.send(chat_id, "Comando nao reconhecido.\n\n" + HELP, reply_to=message_id)

@@ -166,6 +166,30 @@ def concluir(lid: str) -> None:
                 return
 
 
+def apagar_inativos(chat_id=None) -> int:
+    """Remove de vez os lembretes com `ativo: false` (cancelados/concluidos).
+
+    Sem `chat_id` limpa todos os chats; com `chat_id` mexe so nos daquele chat.
+    Devolve quantos registros foram removidos.
+    """
+    global _cache
+    with _lock:
+        itens = _load()
+        restantes = [
+            item
+            for item in itens
+            if item.get("ativo")
+            or (chat_id is not None and item.get("chat_id") != chat_id)
+        ]
+        removidos = len(itens) - len(restantes)
+        if not removidos:
+            return 0
+        _cache = restantes
+        _save()
+        log.info("apagados %d lembretes inativos (chat=%s)", removidos, chat_id)
+        return removidos
+
+
 def registrar_envio(lid: str, quando_iso: str | None = None) -> None:
     with _lock:
         for item in _load():

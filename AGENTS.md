@@ -75,12 +75,13 @@ All Python in repo root; host runs use `./.venv/bin/python <script>`.
 - `telegram_api.py` — Bot API client: `api`, `send`, `typing`, `download_file`,
   `redact` (token never leaks into logs).
 - `telegram_bot.py` — long-poll; commands `/start` `/help` `/id` `/listar`
-  `/cancelar`; text and `voice`/`audio` messages processed in worker threads
-  (one message at a time per chat).
+  `/cancelar` `/apagar_inativos`; text and `voice`/`audio` messages processed in
+  worker threads (one message at a time per chat).
 - `parser.py` — deterministic NL → `Resultado` (`criar`/`cancelar`/`erro`),
   `de_campos()` validation for the LLM fallback, `formatar()`/`descrever()`.
 - `lembretes.py` — JSON store CRUD; `buscar_por_texto()` = exact → substring →
-  `difflib` fuzzy; soft-delete keeps history.
+  `difflib` fuzzy; soft-delete keeps history; `apagar_inativos()` purges
+  `ativo: false` for good (scoped to one chat when `chat_id` is given).
 - `agendador.py` — scheduler thread (`Agendador`); `acordar()` on create/cancel.
 - `transcricao.py` — OpenRouter chat completions with `input_audio` base64
   (`ogg`); prompt fixed to literal pt-BR transcription.

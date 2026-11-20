@@ -54,11 +54,16 @@ Recorrencia: `repetir todos os dias`, `todos os dias`, `todas as [dia]`,
 
 ## Comandos
 
-`/start`, `/help`, `/id`, `/listar`, `/cancelar <id|evento>`.
+`/start`, `/help`, `/id`, `/listar`, `/cancelar <id|evento>`,
+`/apagar_inativos [confirmar]`.
 
 Cancelamento por nome casa por igualdade, substring e semelhanca. Se houver mais
 de um lembrete parecido, o bot lista os ids e pede `/cancelar <id>` — nunca
 cancela em massa.
+
+`/apagar_inativos` remove de vez do `lembretes.json` o historico com
+`"ativo": false` (cancelados e concluidos). Sem argumento mostra a previa e pede
+`/apagar_inativos confirmar`; so apaga os lembretes do proprio chat.
 
 ## Layout
 
