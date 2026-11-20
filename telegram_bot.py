@@ -207,7 +207,7 @@ def _processar_audio(chat_id: int, msg: dict, message_id: int) -> None:
         tg.send(chat_id, "Nao entendi o audio. Pode repetir?", reply_to=message_id)
         return
 
-    log.info("chat %s audio -> %r", chat_id, texto[:120])
+    log.info("chat %s audio -> %d chars", chat_id, len(texto))
     tg.send(chat_id, f'🎧 Ouvi: "{texto}"', reply_to=message_id)
     _processar(chat_id, texto, reply_to=message_id, origem="audio")
 
@@ -238,7 +238,7 @@ def handle_message(msg: dict) -> None:
     texto = (msg.get("text") or "").strip()
     message_id = msg["message_id"]
 
-    if ALLOWED and user_id not in ALLOWED:
+    if user_id not in ALLOWED:
         tg.send(chat_id, "Acesso nao autorizado.", reply_to=message_id)
         return
 
@@ -303,6 +303,12 @@ def main() -> None:
 
     if not tg.TOKEN:
         log.info("ERRO: defina TELEGRAM_BOT_TOKEN (veja .secrets/agenda/telegram.env)")
+        sys.exit(1)
+
+    if not ALLOWED:
+        log.info(
+            "ERRO: defina TELEGRAM_ALLOWED_USER_IDS (sem a lista o bot nao atende ninguem)"
+        )
         sys.exit(1)
 
     ativos = lembretes.ativos()

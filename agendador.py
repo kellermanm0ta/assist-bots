@@ -40,7 +40,7 @@ class Agendador(threading.Thread):
             try:
                 self._ciclo()
             except Exception as e:
-                log.error("falha no ciclo do agendador: %r", e)
+                log.error("falha no ciclo do agendador: %s", telegram_api.redact(e))
             self._wake.wait(self._espera())
             self._wake.clear()
         log.info("agendador encerrado")

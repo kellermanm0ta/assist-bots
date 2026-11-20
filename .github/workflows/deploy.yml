@@ -58,7 +58,9 @@ jobs:
           printf 'OPENROUTER_API_KEY=%s\n' "$OPENROUTER_API_KEY" > .secrets/openrouter.env
 
       - name: Empacotar compose + secrets
-        run: tar -czf deploy.tgz docker-compose.prod.yml .secrets
+        run: |
+          umask 077
+          tar -czf deploy.tgz docker-compose.prod.yml .secrets
 
       - name: Enviar para a VPS
         uses: appleboy/scp-action@v0.1.7
@@ -79,8 +81,10 @@ jobs:
           port: ${{ secrets.VPS_PORT || 22 }}
           script: |
             set -euo pipefail
+            umask 077
             cd ~/assist-bots
             mkdir -p data/agenda
+            chmod 600 deploy.tgz
             tar -xzf deploy.tgz
             rm -f deploy.tgz
             chmod 700 .secrets
@@ -92,7 +96,10 @@ jobs:
               --filter "label=org.opencontainers.image.source=https://github.com/kellermanm0ta/assist-bots"
             sleep 3
             docker compose -f docker-compose.prod.yml ps
-            docker compose -f docker-compose.prod.yml logs --tail=50 agenda
+            # So as linhas de inicializacao/erro: o log da Actions e publico e o
+            # log cru do container pode conter texto de lembretes e transcricoes.
+            docker compose -f docker-compose.prod.yml logs --tail=200 agenda 2>&1 \
+              | grep -E "iniciado|ERROR" | tail -5 || true
             ok=0
             for _ in 1 2 3 4 5; do
               logs="$(docker compose -f docker-compose.prod.yml logs --tail=100 agenda 2>&1 || true)"

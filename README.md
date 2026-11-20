@@ -87,7 +87,7 @@ o segundo guarda `chat_id`, lembretes e transcricoes pessoais. Ambos ja estao no
 | `TRANSCRIBE_MODEL` | modelo multimodal da OpenRouter | `google/gemini-2.5-flash` |
 | `TRANSCRIBE_MAX_SEG` / `AUDIO_MAX_MB` | limites do audio | `120` / `10` |
 | `LLM_FALLBACK` | usa LLM quando o parser falha | `true` |
-| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_IDS` | secret (env_file) | — |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_IDS` | secret (env_file); a lista e obrigatoria — sem ela o bot recusa todo mundo | — |
 | `OPENROUTER_API_KEY` | secret (`.secrets/openrouter.env`) | — |
 
 Sem `OPENROUTER_API_KEY`, use `AUDIO_ENABLED=false` e `LLM_FALLBACK=false`: o bot
@@ -115,7 +115,7 @@ Segredos (GitHub → Settings → Secrets and variables → Actions):
 
 | Secret | Uso |
 |---|---|
-| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_IDS` | `.secrets/agenda/telegram.env` na VPS |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_IDS` | `.secrets/agenda/telegram.env` na VPS (a lista e obrigatoria) |
 | `OPENROUTER_API_KEY` | `.secrets/openrouter.env` na VPS |
 | `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` | acesso SSH (`VPS_PORT` opcional) |
 
