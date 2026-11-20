@@ -73,9 +73,11 @@ All Python in repo root; host runs use `./.venv/bin/python <script>`.
 
 - `config.py` — env parsing and secret loading; computes `TZ` (`ZoneInfo`).
 - `telegram_api.py` — Bot API client: `api`, `send`, `typing`, `download_file`,
-  `redact` (token never leaks into logs).
-- `telegram_bot.py` — long-poll; commands `/start` `/help` `/id` `/listar`
-  `/cancelar` `/apagar_inativos`; text and `voice`/`audio` messages processed in
+  `editar`/`responder_callback` (inline buttons), `redact` (token never leaks
+  into logs).
+- `telegram_bot.py` — long-poll (`message` + `callback_query`); commands
+  `/start` `/help` `/id` `/listar` `/cancelar` `/apagar_inativos` (preview with
+  Apagar/Cancelar buttons); text and `voice`/`audio` messages processed in
   worker threads (one message at a time per chat).
 - `parser.py` — deterministic NL → `Resultado` (`criar`/`cancelar`/`erro`),
   `de_campos()` validation for the LLM fallback, `formatar()`/`descrever()`.

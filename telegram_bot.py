@@ -54,7 +54,7 @@ def build_help() -> str:
         "Comandos:\n"
         "  /listar   - lembretes ativos\n"
         "  /cancelar <id|evento> - cancela um lembrete\n"
-        "  /apagar_inativos - apaga de vez o historico cancelado/concluido\n"
+        "  /apagar_inativos - mostra a previa e confirma no botao\n"
         "  /id       - mostra seu user id"
     )
 
@@ -119,28 +119,112 @@ def _listar(chat_id: int) -> str:
     return "Lembretes ativos:\n" + "\n".join(_resumo(item) for item in ativos)
 
 
-def _apagar_inativos(chat_id: int, arg: str = "") -> str:
-    """Purga do store os lembretes cancelados/concluidos (ativo: false)."""
-    inativos = [
+def _inativos(chat_id: int) -> list[dict]:
+    return [
         item
         for item in lembretes.listar(chat_id, incluir_inativos=True)
         if not item.get("ativo")
     ]
+
+
+def _resumo_inativos(inativos: list[dict], limite: int = 10) -> str:
+    linhas = "\n".join(f"#{item['id']} - {item['texto']}" for item in inativos[:limite])
+    resto = len(inativos) - limite
+    if resto > 0:
+        linhas += f"\n... e mais {resto}."
+    return linhas
+
+
+def _teclado_apagar(quantidade: int) -> dict:
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "Apagar", "callback_data": f"apagar_inativos:ok:{quantidade}"},
+                {"text": "Cancelar", "callback_data": "apagar_inativos:nao"},
+            ]
+        ]
+    }
+
+
+def _previa_apagar(chat_id: int) -> tuple[str, int]:
+    inativos = _inativos(chat_id)
+    if not inativos:
+        return "Nenhum lembrete inativo para apagar.", 0
+    return (
+        f"{len(inativos)} lembrete(s) inativo(s) serao apagados de vez:\n"
+        f"{_resumo_inativos(inativos)}\n\n"
+        "Confirme no botao ou com /apagar_inativos confirmar",
+        len(inativos),
+    )
+
+
+def _apagar_inativos_agora(chat_id: int) -> str:
+    inativos = _inativos(chat_id)
     if not inativos:
         return "Nenhum lembrete inativo para apagar."
-
-    if arg.strip().lower() not in ("confirmar", "sim"):
-        linhas = "\n".join(f"#{item['id']} - {item['texto']}" for item in inativos[:10])
-        resto = len(inativos) - 10
-        extra = f"\n... e mais {resto}." if resto > 0 else ""
-        return (
-            f"{len(inativos)} lembrete(s) inativo(s) serao apagados de vez:\n"
-            f"{linhas}{extra}\n\n"
-            "Confirme com /apagar_inativos confirmar"
-        )
-
     removidos = lembretes.apagar_inativos(chat_id)
-    return f"{removidos} lembrete(s) inativo(s) apagado(s)."
+    return (
+        f"{removidos} lembrete(s) inativo(s) apagado(s):\n"
+        f"{_resumo_inativos(inativos)}"
+    )
+
+
+def _parse_comando(texto: str) -> tuple[str, str]:
+    """`/listar@Bot foo` -> ('/listar', 'foo')."""
+    if not texto.startswith("/"):
+        return "", ""
+    partes = texto.split(maxsplit=1)
+    nome = partes[0].split("@", 1)[0].lower()
+    return nome, (partes[1].strip() if len(partes) > 1 else "")
+
+
+def handle_callback(cb: dict) -> None:
+    """Clique nos botoes inline (hoje so o de /apagar_inativos)."""
+    cb_id = cb.get("id")
+    user_id = (cb.get("from") or {}).get("id")
+    mensagem = cb.get("message") or {}
+    chat_id = (mensagem.get("chat") or {}).get("id")
+    message_id = mensagem.get("message_id")
+    if not cb_id or chat_id is None or message_id is None:
+        return
+
+    if user_id not in ALLOWED:
+        tg.responder_callback(cb_id, "Acesso nao autorizado.")
+        return
+
+    partes = (cb.get("data") or "").strip().split(":")
+    if len(partes) < 2 or partes[0] != "apagar_inativos":
+        tg.responder_callback(cb_id)
+        return
+
+    acao = partes[1]
+    if acao == "nao":
+        tg.responder_callback(cb_id)
+        texto = "Nada foi apagado."
+    elif acao == "ok":
+        esperado = int(partes[2]) if len(partes) > 2 and partes[2].isdigit() else None
+        atual = len(_inativos(chat_id))
+        if esperado is not None and atual != esperado:
+            # botao velho: a lista mudou desde a previa, confirma de novo
+            tg.responder_callback(cb_id, "A lista mudou.")
+            previa, quantidade = _previa_apagar(chat_id)
+            _editar(chat_id, message_id, previa, _teclado_apagar(quantidade) if quantidade else None)
+            return
+        tg.responder_callback(cb_id, "Apagando...")
+        texto = _apagar_inativos_agora(chat_id)
+    else:
+        tg.responder_callback(cb_id)
+        return
+
+    _editar(chat_id, message_id, texto)
+
+
+def _editar(chat_id: int, message_id: int, texto: str, botoes=None) -> None:
+    try:
+        tg.editar(chat_id, message_id, texto, botoes)
+    except Exception as e:
+        log.error("falha editando mensagem do botao: %s", tg.redact(e))
+        tg.send(chat_id, texto)
 
 
 def _processar(chat_id: int, texto: str, reply_to=None, origem: str = "texto") -> None:
@@ -267,24 +351,33 @@ def handle_message(msg: dict) -> None:
         tg.send(chat_id, "Acesso nao autorizado.", reply_to=message_id)
         return
 
-    if texto in ("/start", "/help"):
+    comando, argumentos = _parse_comando(texto)
+
+    if comando in ("/start", "/help"):
         tg.send(chat_id, HELP, reply_to=message_id)
         return
-    if texto == "/id":
+    if comando == "/id":
         tg.send(chat_id, f"user id: {user_id}", reply_to=message_id)
         return
-    if texto in ("/listar", "/lembretes"):
+    if comando in ("/listar", "/lembretes"):
         tg.send(chat_id, _listar(chat_id), reply_to=message_id)
         return
-    if texto == "/cancelar" or texto.startswith("/cancelar "):
-        alvo = texto[len("/cancelar") :].strip()
-        tg.send(chat_id, _cancelar(chat_id, alvo), reply_to=message_id)
+    if comando == "/cancelar":
+        tg.send(chat_id, _cancelar(chat_id, argumentos), reply_to=message_id)
         return
-    if texto == "/apagar_inativos" or texto.startswith("/apagar_inativos "):
-        arg = texto[len("/apagar_inativos") :].strip()
-        tg.send(chat_id, _apagar_inativos(chat_id, arg), reply_to=message_id)
+    if comando == "/apagar_inativos":
+        if argumentos.lower() in ("confirmar", "sim"):
+            tg.send(chat_id, _apagar_inativos_agora(chat_id), reply_to=message_id)
+            return
+        previa, quantidade = _previa_apagar(chat_id)
+        tg.send(
+            chat_id,
+            previa,
+            reply_to=message_id,
+            botoes=_teclado_apagar(quantidade) if quantidade else None,
+        )
         return
-    if texto.startswith("/"):
+    if comando:
         tg.send(chat_id, "Comando nao reconhecido.\n\n" + HELP, reply_to=message_id)
         return
 
@@ -364,7 +457,7 @@ def main() -> None:
                 "getUpdates",
                 timeout=LONG_POLL,
                 offset=offset,
-                allowed_updates='["message"]',
+                allowed_updates='["message","callback_query"]',
             )
         except requests.RequestException as e:
             log.info(f"getUpdates falhou: {tg.redact(e)}")
@@ -373,6 +466,13 @@ def main() -> None:
 
         for update in resp.get("result", []):
             offset = update["update_id"] + 1
+            cb = update.get("callback_query")
+            if cb:
+                try:
+                    handle_callback(cb)
+                except Exception as e:
+                    log.info(f"erro processando callback: {tg.redact(repr(e))}")
+                continue
             msg = update.get("message")
             if not msg:
                 continue

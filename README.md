@@ -62,8 +62,10 @@ de um lembrete parecido, o bot lista os ids e pede `/cancelar <id>` — nunca
 cancela em massa.
 
 `/apagar_inativos` remove de vez do `lembretes.json` o historico com
-`"ativo": false` (cancelados e concluidos). Sem argumento mostra a previa e pede
-`/apagar_inativos confirmar`; so apaga os lembretes do proprio chat.
+`"ativo": false` (cancelados e concluidos). Ele mostra a previa com dois botoes
+inline — **Apagar** e **Cancelar** — entao nao precisa digitar nada;
+`/apagar_inativos confirmar` continua valendo como atalho por texto. So apaga os
+lembretes do proprio chat.
 
 ## Layout
 
