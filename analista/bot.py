@@ -48,6 +48,9 @@ _RES_MAX = 20
 _PALAVRAS_GRAFICO = (
     "grafico", "plot", "visual", "evolucao", "evolucao mensal", "curva", "desenhe",
 )
+_PALAVRAS_PIZZA = (
+    "pizza", "fatia", "participacao", "share", "rosca", "donut", "proporcao",
+)
 
 
 def build_help() -> str:
@@ -69,6 +72,7 @@ def build_help() -> str:
         "  /base      - periodo, contagens e totais da base\n"
         "  /sql <select>  - ultimo recurso, com guardrails\n"
         "  /grafico <pergunta> - forca o grafico\n"
+        "  /pizza <pergunta>   - forca o grafico de pizza/rosca\n"
         "  /limpar    - apaga o contexto da conversa\n"
         "  /id        - mostra seu user id\n\n"
         "Periodos: 2024, marco de 2024, 1o trimestre de 2023, "
@@ -121,6 +125,8 @@ def _botoes(res: Resultado, token: str) -> dict:
     linha = []
     if res.grafico:
         linha.append({"text": "Grafico", "callback_data": f"an:g:{token}"})
+        if graficos.pode_pizza(res):
+            linha.append({"text": "Pizza", "callback_data": f"an:p:{token}"})
     linha.append({"text": "Tabela", "callback_data": f"an:t:{token}"})
     linha.append({"text": "CSV", "callback_data": f"an:c:{token}"})
     return {"inline_keyboard": [linha]}
@@ -156,14 +162,41 @@ def _quer_grafico(texto: str) -> bool:
     return any(palavra in limpo for palavra in _PALAVRAS_GRAFICO)
 
 
+def _quer_pizza(texto: str) -> bool:
+    limpo = _sem_acento(texto).lower()
+    return any(palavra in limpo for palavra in _PALAVRAS_PIZZA)
+
+
+def _tipo_pedido(texto: str) -> str | None:
+    """Tipo forcado pelas palavras da pergunta (pizza vence o grafico padrao)."""
+    return "pizza" if _quer_pizza(texto) else None
+
+
 def _sem_acento(texto: str) -> str:
     decomposto = unicodedata.normalize("NFKD", texto or "")
     return "".join(c for c in decomposto if not unicodedata.combining(c))
 
 
-def _enviar_grafico(chat_id: int, res: Resultado) -> None:
+def _legenda_grafico(res: Resultado, tipo: str | None) -> str:
+    texto = res.titulo
+    if tipo in graficos.TIPOS_PIZZA:
+        cob = graficos.cobertura(res)
+        if cob is not None and cob < 99.5:
+            fatias = min(len(res.linhas), config.GRAFICO_MAX_FATIAS)
+            texto += f" | as {fatias} maiores somam {cob:.1f}% do total"
+    return texto[:1000]
+
+
+def _enviar_grafico(chat_id: int, res: Resultado, tipo: str | None = None) -> None:
+    if tipo in graficos.TIPOS_PIZZA and not graficos.pode_pizza(res):
+        tg.send(
+            chat_id,
+            "Pizza nao se aplica a este resultado (precisa de categorias com "
+            "valores positivos e metrica somavel). Mandando o grafico padrao.",
+        )
+        tipo = None
     try:
-        caminho = graficos.gerar(res)
+        caminho = graficos.gerar(res, tipo=tipo)
     except graficos.ErroGrafico as e:
         tg.send(chat_id, f"Nao deu para desenhar: {e}")
         return
@@ -172,8 +205,9 @@ def _enviar_grafico(chat_id: int, res: Resultado) -> None:
         tg.send(chat_id, "Nao consegui gerar o grafico.")
         return
     tg.typing(chat_id, "upload_photo")
+    legenda = _legenda_grafico(res, tipo or (res.grafico or {}).get("tipo"))
     try:
-        tg.send_photo(chat_id, str(caminho), legenda=res.titulo[:1000])
+        tg.send_photo(chat_id, str(caminho), legenda=legenda)
     except Exception as e:
         log.error("falha enviando foto: %s", tg.redact(e))
         tg.send(chat_id, "Nao consegui enviar o grafico.")
@@ -204,7 +238,13 @@ def _enviar_csv(chat_id: int, res: Resultado) -> None:
         caminho.unlink(missing_ok=True)
 
 
-def _publicar(chat_id: int, res: Resultado, reply_to=None, com_grafico: bool = False) -> None:
+def _publicar(
+    chat_id: int,
+    res: Resultado,
+    reply_to=None,
+    com_grafico: bool = False,
+    tipo: str | None = None,
+) -> None:
     token = _guardar(res)
     tg.send(
         chat_id,
@@ -214,7 +254,7 @@ def _publicar(chat_id: int, res: Resultado, reply_to=None, com_grafico: bool = F
         parse_mode="HTML",
     )
     if com_grafico and res.grafico:
-        _enviar_grafico(chat_id, res)
+        _enviar_grafico(chat_id, res, tipo)
 
 
 # ---------------------------------------------------------------------------
@@ -302,6 +342,8 @@ def handle_callback(cb: dict) -> None:
 
     if acao == "g":
         _enviar_grafico(chat_id, res)
+    elif acao == "p":
+        _enviar_grafico(chat_id, res, "pizza")
     elif acao == "c":
         _enviar_csv(chat_id, res)
     elif acao == "t":
@@ -320,7 +362,13 @@ def _checar_base(chat_id: int, reply_to=None) -> bool:
     return ok
 
 
-def _processar(chat_id: int, texto: str, reply_to=None, origem: str = "texto") -> None:
+def _processar(
+    chat_id: int,
+    texto: str,
+    reply_to=None,
+    origem: str = "texto",
+    tipo: str | None = None,
+) -> None:
     if not _checar_base(chat_id, reply_to):
         return
 
@@ -329,11 +377,18 @@ def _processar(chat_id: int, texto: str, reply_to=None, origem: str = "texto") -
         resultado, nome = _comando_direto(comando, argumentos)
         if isinstance(resultado, Resultado):
             conversa.registrar(chat_id, texto, nome, {})
-            _publicar(chat_id, resultado, reply_to=reply_to)
+            _publicar(
+                chat_id,
+                resultado,
+                reply_to=reply_to,
+                com_grafico=tipo is not None,
+                tipo=tipo,
+            )
         else:
             tg.send(chat_id, resultado, reply_to=reply_to)
         return
 
+    tipo_final = tipo or _tipo_pedido(texto)
     tg.typing(chat_id)
     resposta = interpretacao.responder(texto, chat_id)
     if resposta.texto:
@@ -344,7 +399,8 @@ def _processar(chat_id: int, texto: str, reply_to=None, origem: str = "texto") -
             chat_id,
             resposta.resultado,
             reply_to=reply_to,
-            com_grafico=_quer_grafico(texto),
+            com_grafico=_quer_grafico(texto) or tipo_final is not None,
+            tipo=tipo_final,
         )
 
 
@@ -446,11 +502,13 @@ def handle_message(msg: dict) -> None:
         conversa.limpar(chat_id)
         tg.send(chat_id, "Contexto apagado.", reply_to=message_id)
         return
-    if comando == "/grafico":
+    tipo_forcado = None
+    if comando in ("/grafico", "/pizza"):
+        tipo_forcado = "pizza" if comando == "/pizza" else None
         texto = argumentos
         comando = ""
         if not texto:
-            tg.send(chat_id, "Uso: /grafico <pergunta>", reply_to=message_id)
+            tg.send(chat_id, f"Uso: {comando or '/grafico'} <pergunta>", reply_to=message_id)
             return
 
     if comando and comando not in ("/base", "/resumo", "/ranking", "/serie", "/tabela", "/sql"):
@@ -472,7 +530,9 @@ def handle_message(msg: dict) -> None:
         tg.send(chat_id, "Ainda estou processando a mensagem anterior.", reply_to=message_id)
         return
     threading.Thread(
-        target=_worker, args=(_processar, chat_id, texto, message_id), daemon=True
+        target=_worker,
+        args=(_processar, chat_id, texto, message_id, "texto", tipo_forcado),
+        daemon=True,
     ).start()
 
 

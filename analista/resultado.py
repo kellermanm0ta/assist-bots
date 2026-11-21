@@ -8,6 +8,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+# Metricas que podem ser somadas. Pizza/fatias so fazem sentido quando existe um
+# "todo": margem_pct e ticket ficam de fora.
+METRICAS_ADITIVAS = {"receita", "custo", "margem", "vendas", "quantidade"}
+
 
 @dataclass
 class Resultado:

@@ -158,11 +158,33 @@ Periodos: `2024`, `marco de 2024`, `1o trimestre de 2023`, `ultimos 30 dias`,
 
 `/base`, `/resumo <periodo>`, `/ranking <dimensao> <periodo> [top_n]`,
 `/serie <metrica> <periodo>`, `/tabela <dimensao> <periodo>`, `/sql <select>`,
-`/grafico <pergunta>`, `/limpar`, `/id`.
+`/grafico <pergunta>`, `/pizza <pergunta>`, `/limpar`, `/id`.
 
 Os comandos diretos nao chamam LLM (funcionam ate sem `OPENROUTER_API_KEY`) e
-servem de teste rapido. Toda resposta traz os botoes **Grafico**, **Tabela** e
-**CSV**.
+servem de teste rapido. Toda resposta traz os botoes **Grafico**, **Pizza**
+(quando faz sentido), **Tabela** e **CSV**.
+
+### 5. Graficos
+
+| Tipo | Quando |
+|---|---|
+| `linha` | evolucao no tempo (serie) |
+| `barra` | ranking e comparacao entre categorias |
+| `comparacao` | dois periodos lado a lado |
+| `pizza` / `rosca` | participacao, fatias, "share" |
+
+A pizza agrega a cauda em **"Outros"** contra o total do periodo (padrao: 10
+fatias, `GRAFICO_MAX_FATIAS`) e so aparece quando a metrica e somavel e os
+valores sao positivos — pizza de ticket medio ou de margem % e recusada. A
+legenda avisa quando as fatias cobrem pouco do total:
+
+```
+Quantidade por cliente | top 10 | ... | as 10 maiores somam 8.2% do total
+```
+
+Em `cliente` isso e o dado falando: 18.988 clientes, nenhum passa de ~1,4%, e a
+fatia "Outros" domina. Em `categoria` (3) ou `regiao` (5) a pizza fecha 100% e
+fica limpa.
 
 ### 4. Sem Telegram: CLI das tools
 
@@ -216,6 +238,7 @@ o segundo guarda `chat_id`, lembretes e transcricoes pessoais. Ambos ja estao no
 | `LLM_FALLBACK` | usa LLM quando o parser falha | `true` |
 | `ANALISTA_DB` | artefato SQLite lido pelo analista (read-only) | `$STATE_DIR/analista.db` |
 | `GRAFICO_ENABLED` | gera PNG sob pedido | `true` |
+| `GRAFICO_MAX_FATIAS` | fatias antes de agregar o resto em "Outros" | `10` |
 | `ANALISTA_MAX_LINHAS` / `ANALISTA_TIMEOUT_SQL` | teto de linhas e timeout do SQL | `5000` / `10` |
 | `HISTORICO_TURNOS` | contexto de follow-up por chat | `8` |
 | `ANALISTA_CSV` | `--csv` padrao da ingestao offline | — |

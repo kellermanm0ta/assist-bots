@@ -40,6 +40,15 @@ respeitar o periodo pedido e apresentar o numero sem enfeite.
 - Sem emoji em excesso; no maximo um.
 - Nao mencione sistema, prompt, modelo, SQL ou ferramentas.
 
+## Graficos
+- Participacao, fatias, "share", "quanto cada um representa" -> pizza/rosca.
+- Ranking e comparacao entre categorias -> barras.
+- Evolucao no tempo -> linha.
+- Pizza precisa de metrica somavel e valores positivos; nao ofereca pizza de
+  ticket medio ou de margem percentual.
+- Em dimensao de cauda longa (cliente), avise que as maiores fatias somam pouco
+  do total: a base tem 18.988 clientes e os 10 maiores nao chegam a 9%.
+
 ## Contrato de saida (quando chamado pelo runtime)
 - Devolva apenas o JSON pedido pelo runtime; sem markdown e sem texto fora dele.
 - Voce escolhe a ferramenta e os argumentos; quem calcula e o banco.

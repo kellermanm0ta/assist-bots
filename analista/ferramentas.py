@@ -14,7 +14,7 @@ import json
 from datetime import date
 
 from analista import config, db, periodo
-from analista.resultado import Resultado
+from analista.resultado import METRICAS_ADITIVAS, Resultado
 from common import logsetup
 
 log = logsetup.get_logger("ferramentas")
@@ -67,8 +67,6 @@ GRANULARIDADES: dict[str, tuple[str, str]] = {
     "ano": ("ano", "Ano"),
     "anual": ("ano", "Ano"),
 }
-
-METRICAS_ADITIVAS = {"receita", "custo", "margem", "vendas", "quantidade"}
 
 DIAS = ["Domingo", "Segunda", "Terca", "Quarta", "Quinta", "Sexta", "Sabado"]
 
@@ -311,11 +309,13 @@ def ranking(
     if (dimensao or "").strip().lower() == "dia_semana":
         linhas = _rotular_dias(linhas)
 
+    total_periodo = None
     if metrica in METRICAS_ADITIVAS and linhas:
         _, total = db.consultar(
-            f"SELECT {expr_met} FROM v_vendas WHERE {onde}", params
+            f"SELECT {expr_met} AS valor FROM v_vendas WHERE {onde}", params
         )
-        soma = (total[0].get(expr_met) or 0) if total else 0
+        soma = (total[0].get("valor") or 0) if total else 0
+        total_periodo = soma
         if soma:
             for linha in linhas:
                 linha["participacao"] = (linha.get("valor") or 0) * 100.0 / soma
@@ -340,6 +340,7 @@ def ranking(
             "metrica": metrica,
             "top_n": top_n,
             "filtros": filtros or {},
+            "total": total_periodo,
         },
         grafico={
             "tipo": "barra",
@@ -372,11 +373,13 @@ def distribuicao(
 
     colunas = [("rotulo", rotulo_dim), ("valor", rotulo_met)]
     formato = {"valor": tipo}
+    total_periodo = None
     if metrica in METRICAS_ADITIVAS:
         _, total = db.consultar(
             f"SELECT {expr_met} AS valor FROM v_vendas WHERE {onde}", params
         )
         soma = (total[0].get("valor") or 0) if total else 0
+        total_periodo = soma
         if soma:
             for linha in linhas:
                 linha["participacao"] = (linha.get("valor") or 0) * 100.0 / soma
@@ -394,6 +397,7 @@ def distribuicao(
             "metrica": metrica,
             "filtros": filtros or {},
             "limite": 100,
+            "total": total_periodo,
         },
         grafico={
             "tipo": "barra",
@@ -479,6 +483,10 @@ def tabela(
     )
     if (dimensao or "").strip().lower() == "dia_semana":
         linhas = _rotular_dias(linhas)
+    _, total = db.consultar(
+        f"SELECT SUM(receita) AS valor FROM v_vendas WHERE {onde}", params
+    )
+    total_periodo = (total[0].get("valor") or 0) if total else 0
     return Resultado(
         titulo=f"{rotulo_dim} - {p.rotulo}",
         colunas=[
@@ -497,7 +505,19 @@ def tabela(
             "margem_pct": "pct",
             "vendas": "num",
         },
-        metadados={"periodo": p.rotulo, "dimensao": dimensao, "filtros": filtros or {}},
+        metadados={
+            "periodo": p.rotulo,
+            "dimensao": dimensao,
+            "metrica": "receita",
+            "filtros": filtros or {},
+            "total": total_periodo,
+        },
+        grafico={
+            "tipo": "barra",
+            "x": "rotulo",
+            "y": "receita",
+            "titulo": f"Receita por {rotulo_dim.lower()}",
+        },
     )
 
 

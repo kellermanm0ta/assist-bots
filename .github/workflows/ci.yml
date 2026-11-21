@@ -118,6 +118,23 @@ jobs:
           else:
               raise AssertionError("whitelist nao bloqueou sqlite_master")
 
+          # graficos: os quatro tipos desenham, pizza respeita metrica somavel
+          from analista import graficos
+
+          recortes = {
+              "linha": ferramentas.serie("2024", "mensal", "receita"),
+              "barra": ferramentas.ranking("servico", "2024", "receita", 10),
+              "comparacao": ferramentas.comparar("2023", "2024"),
+              "pizza": ferramentas.ranking("servico", "2024", "receita", 10),
+              "rosca": ferramentas.distribuicao("equipe", "2024"),
+          }
+          for tipo, resultado in recortes.items():
+              png = graficos.gerar(resultado, tmp / f"{tipo}.png", tipo=tipo)
+              assert png.exists() and png.stat().st_size > 1000, tipo
+
+          assert graficos.pode_pizza(recortes["pizza"]), "pizza devia ser permitida"
+          assert not graficos.pode_pizza(recortes["linha"]), "pizza em serie devia ser recusada"
+
           print("analista ok")
           PY
 

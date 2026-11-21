@@ -81,9 +81,14 @@ flowchart LR
   only, single statement, table whitelist (`vendas`, `v_vendas`, `v_mensal`,
   `meta`), row cap and a 10 s progress-handler timeout. The SQL is logged and
   visible via `/sql`.
-- Charts are rendered only when asked (words like "grafico"/"evolucao" or the
-  inline button). `matplotlib` is imported on demand, so the bot starts fast and
-  still works with `GRAFICO_ENABLED=false`.
+- Charts are rendered only when asked ("grafico"/"evolucao"/"pizza" in the
+  question, `/grafico`, `/pizza` or the inline button). Types: `linha`, `barra`,
+  `comparacao`, `pizza` and `rosca`. Pie aggregates the tail into "Outros"
+  against the **period total** and is refused for non-additive metrics or
+  negative values; `pode_pizza()` decides whether to offer the button, and the
+  caption warns when the shown slices cover little of the total (e.g. cliente).
+  `matplotlib` is imported on demand, so the bot starts fast and still works
+  with `GRAFICO_ENABLED=false`.
 - `periodo.py` resolves "2024", "marco de 2024", "1o trimestre de 2023",
   "ultimos 30 dias", "de 01/03 a 15/04" and "tudo". Without an explicit year it
   uses the **last year of the base**, not the current year.
@@ -104,6 +109,7 @@ flowchart LR
 | `LLM_FALLBACK` | LLM when deterministic parsing fails | `true` |
 | `ANALISTA_DB` | SQLite artifact read by the analista (read-only) | `$STATE_DIR/analista.db` |
 | `GRAFICO_ENABLED` | render PNG charts on demand | `true` |
+| `GRAFICO_MAX_FATIAS` | slices before aggregating the rest into "Outros" | `10` |
 | `ANALISTA_MAX_LINHAS` / `ANALISTA_TIMEOUT_SQL` | row cap and SQL timeout (s) | `5000` / `10` |
 | `HISTORICO_TURNOS` | follow-up context kept per chat | `8` |
 | `ANALISTA_CSV` | default `--csv` for the offline ingestion | — |
@@ -180,7 +186,8 @@ Agent packages run as `python -m <agente>` (host: `./.venv/bin/python -m <agente
   and returns a `Resultado` (or plain text); feeds tool errors back once.
 - `formato.py` — pt-BR numbers and monospace tables for `<pre>`.
 - `resultado.py` — the `Resultado` dataclass shared by tools/formatters.
-- `graficos.py` — PNG (line, horizontal bar, comparison) with lazy matplotlib.
+- `graficos.py` — PNG (`linha`, `barra`, `comparacao`, `pizza`/`rosca`) with
+  lazy matplotlib, `pode_pizza()`, `cobertura` and "Outros" aggregation.
 - `conversa.py` — in-memory per-chat history for follow-ups.
 - `consultas.py` — CLI to run any tool without Telegram or LLM.
 

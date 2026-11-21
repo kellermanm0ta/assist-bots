@@ -18,7 +18,7 @@ import argparse
 import json
 import sys
 
-from analista import db, ferramentas, formato
+from analista import db, ferramentas, formato, graficos
 
 
 def _valor(txt: str):
@@ -51,6 +51,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limite", type=int, default=25, help="linhas na tabela")
     parser.add_argument("--grafico", nargs="?", const="", default=None, metavar="PNG",
                         help="gera o PNG do resultado (opcional: caminho de saida)")
+    parser.add_argument("--tipo", choices=sorted(graficos.TIPOS), default=None,
+                        help="forca o tipo do grafico (pizza, rosca, barra, linha, comparacao)")
     opcoes = parser.parse_args(argv)
 
     ok, mensagem = db.status()
@@ -71,10 +73,10 @@ def main(argv: list[str] | None = None) -> int:
     if opcoes.grafico is not None:
         from pathlib import Path
 
-        from analista import graficos
-
         try:
-            png = graficos.gerar(res, Path(opcoes.grafico) if opcoes.grafico else None)
+            png = graficos.gerar(
+                res, Path(opcoes.grafico) if opcoes.grafico else None, tipo=opcoes.tipo
+            )
         except graficos.ErroGrafico as e:
             print(f"grafico: {e}", file=sys.stderr)
         else:
