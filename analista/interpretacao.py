@@ -20,9 +20,8 @@ o bot responde com um pedido de esclarecimento em vez de insistir.
 from __future__ import annotations
 
 import json
-import re
 
-from analista import conversa, db, ferramentas
+from analista import conversa, ferramentas
 from analista.resultado import Resultado
 from common import llm, logsetup
 
@@ -85,33 +84,6 @@ class Resposta:
         self.args = args or {}
 
 
-def _resultado_sql(colunas: list[str], linhas: list[dict], sql: str) -> Resultado:
-    return Resultado(
-        titulo="Consulta livre",
-        colunas=[(c, c) for c in colunas],
-        linhas=linhas,
-        metadados={"sql": sql, "linhas": len(linhas)},
-        grafico=_grafico_inferido(colunas, linhas),
-    )
-
-
-def _grafico_inferido(colunas: list[str], linhas: list[dict]) -> dict | None:
-    """Chuta linha/barra para resultado de SQL livre (sem prometer nada)."""
-    if len(colunas) < 2 or not linhas:
-        return None
-    eixo_y = None
-    for chave in reversed(colunas[1:]):
-        amostra = [linha.get(chave) for linha in linhas[:20]]
-        if all(isinstance(v, (int, float)) for v in amostra):
-            eixo_y = chave
-            break
-    if not eixo_y:
-        return None
-    primeiro = str(linhas[0].get(colunas[0]) or "")
-    tipo = "linha" if re.match(r"^\d{4}(-\d{2})?$", primeiro) else "barra"
-    return {"tipo": tipo, "x": colunas[0], "y": eixo_y, "titulo": "Resultado"}
-
-
 def responder(pergunta: str, chat_id: int | None = None) -> Resposta:
     """Resolve a pergunta com o LLM. Sem chave, devolve texto explicativo."""
     if not llm.chave():
@@ -171,15 +143,15 @@ def responder(pergunta: str, chat_id: int | None = None) -> Resposta:
         elif acao == "sql":
             sql = str(obj.get("sql") or "").strip()
             try:
-                colunas, linhas, final = db.executar_sql(sql)
-            except (db.ErroSQL, db.ErroConsulta) as e:
+                resultado = ferramentas.consultar_sql(sql)
+            except ferramentas.ErroFerramenta as e:
                 erro = str(e)
                 log.warning("sql recusado/falhou: %s", erro)
             else:
                 if chat_id is not None:
                     conversa.registrar(chat_id, pergunta, "consultar_sql", {"sql": sql})
                 return Resposta(
-                    resultado=_resultado_sql(colunas, linhas, final),
+                    resultado=resultado,
                     ferramenta="consultar_sql",
                     args={"sql": sql},
                 )

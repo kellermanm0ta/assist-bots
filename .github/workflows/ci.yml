@@ -135,6 +135,16 @@ jobs:
           assert graficos.pode_pizza(recortes["pizza"]), "pizza devia ser permitida"
           assert not graficos.pode_pizza(recortes["linha"]), "pizza em serie devia ser recusada"
 
+          # botoes elegiveis por tipo de resultado
+          assert graficos.tipos_elegiveis(recortes["linha"]) == ["barra", "linha"]
+          assert graficos.tipos_elegiveis(recortes["barra"]) == ["barra", "pizza"]
+          assert graficos.tipos_elegiveis(recortes["comparacao"]) == ["barra"]
+          assert graficos.tipos_elegiveis(ferramentas.resumo("2024")) == []
+
+          # uma cor por barra
+          cores = graficos._cores_barras(6)
+          assert len({tuple(c) for c in cores}) == 6, cores
+
           print("analista ok")
           PY
 

@@ -161,8 +161,16 @@ Periodos: `2024`, `marco de 2024`, `1o trimestre de 2023`, `ultimos 30 dias`,
 `/grafico <pergunta>`, `/pizza <pergunta>`, `/limpar`, `/id`.
 
 Os comandos diretos nao chamam LLM (funcionam ate sem `OPENROUTER_API_KEY`) e
-servem de teste rapido. Toda resposta traz os botoes **Grafico**, **Pizza**
-(quando faz sentido), **Tabela** e **CSV**.
+servem de teste rapido. Cada resposta traz **um botao por tipo de grafico
+elegivel**, na ordem `Barra`, `Linha`, `Pizza` — mais `CSV`. Nao ha botao de
+Tabela: a tabela ja vai no texto.
+
+| Resultado | Botoes |
+|---|---|
+| serie temporal | Barra, Linha, CSV |
+| ranking / distribuicao / tabela | Barra, Pizza (se metrica somavel), CSV |
+| comparacao de periodos | Barra, CSV |
+| resumo / info_base | CSV |
 
 ### 5. Graficos
 

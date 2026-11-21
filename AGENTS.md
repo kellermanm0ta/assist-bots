@@ -83,12 +83,16 @@ flowchart LR
   visible via `/sql`.
 - Charts are rendered only when asked ("grafico"/"evolucao"/"pizza" in the
   question, `/grafico`, `/pizza` or the inline button). Types: `linha`, `barra`,
-  `comparacao`, `pizza` and `rosca`. Pie aggregates the tail into "Outros"
-  against the **period total** and is refused for non-additive metrics or
-  negative values; `pode_pizza()` decides whether to offer the button, and the
-  caption warns when the shown slices cover little of the total (e.g. cliente).
-  `matplotlib` is imported on demand, so the bot starts fast and still works
-  with `GRAFICO_ENABLED=false`.
+  `comparacao`, `pizza` and `rosca`; bars get one colour each. The response
+  carries one button per **eligible** type, in the order `Barra`, `Linha`,
+  `Pizza` (`graficos.tipos_elegiveis`): a time series offers Barra+Linha, a
+  ranking offers Barra (+Pizza when the metric is additive), a comparison only
+  Barra, and a summary offers none. There is no `Tabela` button — the table is
+  already in the message. Pie aggregates the tail into "Outros" against the
+  **period total** and is refused for non-additive metrics or negative values;
+  the caption warns when the shown slices cover little of the total (e.g.
+  cliente). `matplotlib` is imported on demand, so the bot starts fast and still
+  works with `GRAFICO_ENABLED=false`.
 - `periodo.py` resolves "2024", "marco de 2024", "1o trimestre de 2023",
   "ultimos 30 dias", "de 01/03 a 15/04" and "tudo". Without an explicit year it
   uses the **last year of the base**, not the current year.

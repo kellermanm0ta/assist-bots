@@ -121,13 +121,15 @@ def _mensagem(res: Resultado) -> str:
     return "\n".join(_cabecalho(res)) + f"\n\n{tg.escape(_corpo(res, 3))}"
 
 
+_ROTULOS_GRAFICO = {"barra": "Barra", "linha": "Linha", "pizza": "Pizza"}
+
+
 def _botoes(res: Resultado, token: str) -> dict:
-    linha = []
-    if res.grafico:
-        linha.append({"text": "Grafico", "callback_data": f"an:g:{token}"})
-        if graficos.pode_pizza(res):
-            linha.append({"text": "Pizza", "callback_data": f"an:p:{token}"})
-    linha.append({"text": "Tabela", "callback_data": f"an:t:{token}"})
+    """Um botao por tipo de grafico elegivel, na ordem barra, linha, pizza."""
+    linha = [
+        {"text": _ROTULOS_GRAFICO[tipo], "callback_data": f"an:{tipo[0]}:{token}"}
+        for tipo in graficos.tipos_elegiveis(res)
+    ]
     linha.append({"text": "CSV", "callback_data": f"an:c:{token}"})
     return {"inline_keyboard": [linha]}
 
@@ -340,13 +342,13 @@ def handle_callback(cb: dict) -> None:
         return
     tg.responder_callback(cb_id)
 
-    if acao == "g":
-        _enviar_grafico(chat_id, res)
-    elif acao == "p":
-        _enviar_grafico(chat_id, res, "pizza")
+    tipos = {"b": "barra", "l": "linha", "p": "pizza"}
+    if acao in tipos:
+        _enviar_grafico(chat_id, res, tipos[acao])
     elif acao == "c":
         _enviar_csv(chat_id, res)
     elif acao == "t":
+        # legado: mensagens antigas ainda podem ter o botao Tabela
         tg.send(chat_id, _mensagem(res), parse_mode="HTML")
 
 

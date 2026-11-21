@@ -23,7 +23,7 @@ from common import logsetup
 log = logsetup.get_logger("graficos")
 
 RETENCAO_DIAS = 7
-MAX_BARRAS = 20
+MAX_BARRAS = 40
 TIPOS = {"linha", "barra", "comparacao", "pizza", "rosca"}
 TIPOS_PIZZA = {"pizza", "rosca"}
 
@@ -119,6 +119,40 @@ def pode_pizza(res: Resultado) -> bool:
     if not valores or any(v < 0 for v in valores):
         return False
     return sum(valores) > 0
+
+
+def tipos_elegiveis(res: Resultado) -> list[str]:
+    """Tipos de grafico que fazem sentido para este resultado, nesta ordem.
+
+    - serie temporal (spec `linha`): barra e linha;
+    - categorico (ranking/distribuicao/tabela): barra, + pizza se somavel;
+    - comparacao: barra (duas barras);
+    - resumo/info_base (sem spec): nenhum.
+    """
+    espec = res.grafico or {}
+    original = espec.get("tipo")
+    if not original or not res.linhas:
+        return []
+
+    tipos = ["barra"]
+    if original == "linha":
+        tipos.append("linha")
+    if pode_pizza(res):
+        tipos.append("pizza")
+    return tipos
+
+
+def _cores_barras(quantidade: int):
+    """Uma cor por barra: tab10 ate 10, tab20 ate 20, gradiente acima disso."""
+    plt = _pyplot()
+    if quantidade <= 10:
+        cmap = plt.get_cmap("tab10")
+        return [cmap(i) for i in range(quantidade)]
+    if quantidade <= 20:
+        cmap = plt.get_cmap("tab20")
+        return [cmap(i) for i in range(quantidade)]
+    cmap = plt.get_cmap("viridis")
+    return [cmap(i / max(1, quantidade - 1)) for i in range(quantidade)]
 
 
 def cobertura(res: Resultado, limite: int | None = None) -> float | None:
@@ -250,10 +284,14 @@ def gerar(res: Resultado, caminho: Path | None = None, tipo: str | None = None) 
     espec = dict(res.grafico or {})
     if not espec or not espec.get("tipo"):
         raise ErroGrafico("este resultado nao tem grafico sugerido")
+    original = espec["tipo"]
     if tipo:
         if tipo not in TIPOS:
             raise ErroGrafico(f'tipo de grafico desconhecido: "{tipo}"')
-        espec["tipo"] = tipo
+        # "barra" num resultado de comparacao continua sendo a comparacao
+        # (duas barras), que ja e o desenho natural dele.
+        if not (tipo == "barra" and original == "comparacao"):
+            espec["tipo"] = tipo
     tipo = espec["tipo"]
 
     if tipo in TIPOS_PIZZA:
@@ -285,17 +323,19 @@ def gerar(res: Resultado, caminho: Path | None = None, tipo: str | None = None) 
         eixo_valor = ax.yaxis
 
     elif tipo == "barra":
-        recorte = res.linhas[:MAX_BARRAS]
-        rotulos = [_encurtar(str(linha.get(espec.get("x", "rotulo")))) for linha in recorte]
-        valores = [linha.get(espec.get("y", "valor")) or 0 for linha in recorte]
+        linhas = res.linhas
+        temporal = original == "linha"
+        if len(linhas) > MAX_BARRAS:
+            linhas = linhas[-MAX_BARRAS:] if temporal else linhas[:MAX_BARRAS]
+            titulo += f" (ultimos {MAX_BARRAS})" if temporal else f" (top {MAX_BARRAS})"
+        rotulos = [_encurtar(str(linha.get(espec.get("x", "rotulo")))) for linha in linhas]
+        valores = [linha.get(espec.get("y", "valor")) or 0 for linha in linhas]
         posicoes = list(range(len(rotulos)))
-        ax.barh(posicoes, valores, color="#1f6feb")
+        ax.barh(posicoes, valores, color=_cores_barras(len(rotulos)))
         ax.set_yticks(posicoes)
         ax.set_yticklabels(rotulos, fontsize=9)
         ax.invert_yaxis()
         ax.grid(axis="x", alpha=0.25)
-        if len(res.linhas) > len(recorte):
-            titulo += f" (top {len(recorte)})"
         eixo_valor = ax.xaxis
 
     elif tipo == "comparacao":

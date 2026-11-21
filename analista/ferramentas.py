@@ -11,6 +11,7 @@ Toda funcao aceita o periodo como texto pt-BR ("2024", "marco de 2023",
 from __future__ import annotations
 
 import json
+import re
 from datetime import date
 
 from analista import config, db, periodo
@@ -521,17 +522,37 @@ def tabela(
     )
 
 
+def _grafico_inferido(colunas: list[str], linhas: list[dict]) -> dict | None:
+    """Chute honesto para SQL livre: linha se o eixo parece data, senao barra."""
+    if len(colunas) < 2 or not linhas:
+        return None
+    eixo_y = None
+    for chave in reversed(colunas[1:]):
+        amostra = [linha.get(chave) for linha in linhas[:20]]
+        if all(isinstance(v, (int, float)) for v in amostra):
+            eixo_y = chave
+            break
+    if not eixo_y:
+        return None
+    primeiro = str(linhas[0].get(colunas[0]) or "")
+    tipo = "linha" if re.match(r"^\d{4}(-\d{2})?$", primeiro) else "barra"
+    return {"tipo": tipo, "x": colunas[0], "y": eixo_y, "titulo": "Resultado"}
+
+
 def consultar_sql(sql: str) -> Resultado:
     """Escape hatch: SQL validado por `db.validar_sql`."""
     try:
         colunas, linhas, final = db.executar_sql(sql)
     except db.ErroSQL as e:
         raise ErroFerramenta(f"SQL recusado: {e}") from e
+    except db.ErroConsulta as e:
+        raise ErroFerramenta(f"SQL falhou: {e}") from e
     return Resultado(
         titulo="Consulta livre",
         colunas=[(c, c) for c in colunas],
         linhas=linhas,
         metadados={"sql": final, "linhas": len(linhas)},
+        grafico=_grafico_inferido(colunas, linhas),
     )
 
 
