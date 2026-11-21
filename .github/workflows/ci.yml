@@ -53,6 +53,74 @@ jobs:
         # Nao roda `python -m agenda` (iniciaria o long-polling); so importa.
         run: python -c "import agenda.bot, agenda.agendador, agenda.runtime; print('imports ok')"
 
+      - name: Smoke test do analista
+        # Base fixture em /tmp: ingestao offline -> tools -> guardrails.
+        run: |
+          python - <<'PY'
+          import csv
+          import os
+          import subprocess
+          import sys
+          import tempfile
+          from pathlib import Path
+
+          tmp = Path(tempfile.mkdtemp())
+          base = tmp / "base.csv"
+          cabecalho = ["Id", "data_venda", "vendedor", "equipe", "categoria_servico",
+                       "servico", "quantidade", "preco_unitario", "custo", "cliente",
+                       "estado", "regiao"]
+          linhas = [
+              [1, "2024-01-10", "X", "Equipe A", "Consultoria", "Servico 1", 2, 100, 60, "Cliente 1", "SP", "sudeste"],
+              [2, "2024-06-05", "Y", "Equipe B", "Desenvolvimento", "Servico 2", 1, 100, 50, "Cliente 2", "RJ", "sudeste"],
+              [3, "2023-03-01", "X", "Equipe A", "Consultoria", "Servico 1", 1, 50, 30, "Cliente 1", "SP", "sudeste"],
+          ]
+          with base.open("w", newline="", encoding="utf-8") as fh:
+              escritor = csv.writer(fh)
+              escritor.writerow(cabecalho)
+              escritor.writerows(linhas)
+
+          destino = tmp / "analista.db"
+          subprocess.run(
+              [sys.executable, "-m", "analista.ingestao", "--csv", str(base), "--saida", str(destino)],
+              check=True,
+          )
+          os.environ["ANALISTA_DB"] = str(destino)
+
+          from analista import db as basedb, ferramentas
+
+          # receita 2024 = 2*100 + 1*100 = 300; custo 170; margem 130
+          r = ferramentas.resumo("2024").linhas[0]
+          assert round(r["receita"], 2) == 300.0, r
+          assert round(r["custo"], 2) == 170.0, r
+          assert round(r["margem"], 2) == 130.0, r
+          assert r["vendas"] == 2, r
+
+          # fora de 2024: soma so a linha de 2023
+          total = ferramentas.resumo("tudo").linhas[0]
+          assert round(total["receita"], 2) == 350.0, total
+
+          # ranking respeita o periodo
+          ranking = ferramentas.ranking("equipe", "2024", "receita", 5)
+          assert [x["rotulo"] for x in ranking.linhas] == ["Equipe A", "Equipe B"], ranking.linhas
+
+          # guardrails
+          try:
+              basedb.validar_sql("drop table vendas")
+          except basedb.ErroSQL:
+              pass
+          else:
+              raise AssertionError("guardrail nao bloqueou DROP")
+
+          try:
+              ferramentas.consultar_sql("select * from sqlite_master")
+          except ferramentas.ErroFerramenta:
+              pass
+          else:
+              raise AssertionError("whitelist nao bloqueou sqlite_master")
+
+          print("analista ok")
+          PY
+
   docker:
     runs-on: ubuntu-latest
     steps:

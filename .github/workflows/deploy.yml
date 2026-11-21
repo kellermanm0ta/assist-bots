@@ -49,9 +49,20 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_ALLOWED_USER_IDS: ${{ secrets.TELEGRAM_ALLOWED_USER_IDS }}
+          ANALISTA_TELEGRAM_BOT_TOKEN: ${{ secrets.ANALISTA_TELEGRAM_BOT_TOKEN }}
+          ANALISTA_TELEGRAM_ALLOWED_USER_IDS: ${{ secrets.ANALISTA_TELEGRAM_ALLOWED_USER_IDS }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           fail() { echo "::error::$1"; exit 1; }
+          validar_token() {
+            [[ "$2" =~ ^[0-9]+:[A-Za-z0-9_-]+$ ]] \
+              || fail "$1 fora do formato <id>:<token>"
+          }
+          validar_ids() {
+            [ -n "$2" ] || fail "$1 vazio"
+            [[ "$2" =~ ^[0-9]+([,[:space:]]+[0-9]+)*$ ]] \
+              || fail "$1 deve conter apenas ids numericos"
+          }
 
           [ -n "$OPENROUTER_API_KEY" ] || fail "OPENROUTER_API_KEY vazio"
           case "$OPENROUTER_API_KEY" in
@@ -67,30 +78,36 @@ jobs:
             *) echo "::warning::OPENROUTER_API_KEY sem o prefixo sk-or-v1-" ;;
           esac
 
-          [[ "$TELEGRAM_BOT_TOKEN" =~ ^[0-9]+:[A-Za-z0-9_-]+$ ]] \
-            || fail "TELEGRAM_BOT_TOKEN fora do formato <id>:<token>"
-
-          [ -n "$TELEGRAM_ALLOWED_USER_IDS" ] || fail "TELEGRAM_ALLOWED_USER_IDS vazio"
-          [[ "$TELEGRAM_ALLOWED_USER_IDS" =~ ^[0-9]+([,[:space:]]+[0-9]+)*$ ]] \
-            || fail "TELEGRAM_ALLOWED_USER_IDS deve conter apenas ids numericos"
+          # Um bot/token por agente: nomes distintos para nao trocar os tokens.
+          validar_token TELEGRAM_BOT_TOKEN "$TELEGRAM_BOT_TOKEN"
+          validar_ids TELEGRAM_ALLOWED_USER_IDS "$TELEGRAM_ALLOWED_USER_IDS"
+          validar_token ANALISTA_TELEGRAM_BOT_TOKEN "$ANALISTA_TELEGRAM_BOT_TOKEN"
+          validar_ids ANALISTA_TELEGRAM_ALLOWED_USER_IDS "$ANALISTA_TELEGRAM_ALLOWED_USER_IDS"
 
           # Fingerprints (nunca o valor) para conferir rotacao no log
           echo "OPENROUTER_API_KEY: ${#OPENROUTER_API_KEY} chars, sha256 $(printf %s "$OPENROUTER_API_KEY" | sha256sum | cut -c1-8)"
           echo "TELEGRAM_BOT_TOKEN: ${#TELEGRAM_BOT_TOKEN} chars, sha256 $(printf %s "$TELEGRAM_BOT_TOKEN" | sha256sum | cut -c1-8)"
+          echo "ANALISTA_TELEGRAM_BOT_TOKEN: ${#ANALISTA_TELEGRAM_BOT_TOKEN} chars, sha256 $(printf %s "$ANALISTA_TELEGRAM_BOT_TOKEN" | sha256sum | cut -c1-8)"
           echo "TELEGRAM_ALLOWED_USER_IDS: $(printf %s "$TELEGRAM_ALLOWED_USER_IDS" | tr -cd ',' | wc -c) separador(es)"
 
       - name: Render .secrets a partir dos GitHub Secrets
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_ALLOWED_USER_IDS: ${{ secrets.TELEGRAM_ALLOWED_USER_IDS }}
+          ANALISTA_TELEGRAM_BOT_TOKEN: ${{ secrets.ANALISTA_TELEGRAM_BOT_TOKEN }}
+          ANALISTA_TELEGRAM_ALLOWED_USER_IDS: ${{ secrets.ANALISTA_TELEGRAM_ALLOWED_USER_IDS }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           umask 077
-          mkdir -p .secrets/agenda
+          mkdir -p .secrets/agenda .secrets/analista
           {
             printf 'TELEGRAM_BOT_TOKEN=%s\n' "$TELEGRAM_BOT_TOKEN"
             printf 'TELEGRAM_ALLOWED_USER_IDS=%s\n' "$TELEGRAM_ALLOWED_USER_IDS"
           } > .secrets/agenda/telegram.env
+          {
+            printf 'TELEGRAM_BOT_TOKEN=%s\n' "$ANALISTA_TELEGRAM_BOT_TOKEN"
+            printf 'TELEGRAM_ALLOWED_USER_IDS=%s\n' "$ANALISTA_TELEGRAM_ALLOWED_USER_IDS"
+          } > .secrets/analista/telegram.env
           printf 'OPENROUTER_API_KEY=%s\n' "$OPENROUTER_API_KEY" > .secrets/openrouter.env
 
       - name: Empacotar compose + secrets
@@ -119,12 +136,15 @@ jobs:
             set -euo pipefail
             umask 077
             cd ~/assist-bots
-            mkdir -p data/agenda
+            mkdir -p data/agenda data/analista
             chmod 600 deploy.tgz
             tar -xzf deploy.tgz
             rm -f deploy.tgz
             chmod 700 .secrets
-            chmod 600 .secrets/openrouter.env .secrets/agenda/telegram.env
+            chmod 600 .secrets/openrouter.env .secrets/agenda/telegram.env \
+              .secrets/analista/telegram.env
+            [ -s data/analista/analista.db ] \
+              || echo "AVISO: data/analista/analista.db ausente; o analista sobe sem base"
             printf 'TAG=%s\n' '${{ steps.tag.outputs.tag }}' > .env
             docker compose -f docker-compose.prod.yml pull
             docker compose -f docker-compose.prod.yml up -d --force-recreate
@@ -134,12 +154,17 @@ jobs:
             docker compose -f docker-compose.prod.yml ps
             # So as linhas de inicializacao/erro: o log da Actions e publico e o
             # log cru do container pode conter texto de lembretes e transcricoes.
-            docker compose -f docker-compose.prod.yml logs --tail=200 agenda 2>&1 \
-              | grep -E "iniciado|ERROR" | tail -5 || true
-            ok=0
-            for _ in 1 2 3 4 5; do
-              logs="$(docker compose -f docker-compose.prod.yml logs --tail=100 agenda 2>&1 || true)"
-              case "$logs" in *"Agenda iniciado"*) ok=1; break ;; esac
-              sleep 2
+            for servico in agenda analista; do
+              echo "--- $servico"
+              docker compose -f docker-compose.prod.yml logs --tail=200 "$servico" 2>&1 \
+                | grep -E "iniciado|ERROR" | tail -5 || true
             done
-            [ "$ok" = 1 ] || { echo "health check falhou: bot nao iniciou"; exit 1; }
+            for servico in agenda analista; do
+              ok=0
+              for _ in 1 2 3 4 5; do
+                logs="$(docker compose -f docker-compose.prod.yml logs --tail=100 "$servico" 2>&1 || true)"
+                case "$logs" in *iniciado*) ok=1; break ;; esac
+                sleep 2
+              done
+              [ "$ok" = 1 ] || { echo "health check falhou: $servico nao iniciou"; exit 1; }
+            done

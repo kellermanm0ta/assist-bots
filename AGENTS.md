@@ -1,11 +1,15 @@
 # AGENTS.md
 
-Telegram assistant bots. The first agent is **agenda**: creates, lists and
-cancels reminders from **text or voice**, with recurrence and a scheduler that
-notifies at the right time. Same architecture as `persona-bots`: environment
-config, native long-polling, `data/<agent>/` state, one container per agent.
-There is **no test suite, linter or build step** — verification is running the
-pieces directly.
+Telegram assistant bots. Two agents share one image and one repo:
+
+- **agenda** — creates, lists and cancels reminders from **text or voice**,
+  with recurrence and a scheduler that notifies at the right time.
+- **analista** — business analyst over a **SQLite artifact** of sales, answering
+  questions (revenue, cost, margin, rankings, evolution) with text and charts.
+
+Same architecture as `persona-bots`: environment config, native long-polling,
+`data/<agent>/` state, one container per agent. There is **no test suite, linter
+or build step** — verification is running the pieces directly.
 
 ## Repository layout
 
@@ -14,7 +18,7 @@ One package per agent, shared capabilities at the root:
 ```
 common/     config, logger, Telegram client, audio, LLM client — no business rules
 agenda/     everything that knows what a "lembrete" is
-analista/   (next agent) business analysis over SQLite
+analista/   business analysis over a SQLite artifact (ingestion is offline)
 ```
 
 Each agent package has a `config.py` that calls `common.config.iniciar(<agente>)`
@@ -48,6 +52,42 @@ flowchart LR
 - Dates/times are **naive local** (`TIMEZONE`), so wall-clock reminders stay
   fixed across DST.
 
+## Agente: analista
+
+```mermaid
+flowchart LR
+    TG["analista/bot.py<br/>long-polling"] --> AUD["common/transcricao.py"]
+    TG --> INT["analista/interpretacao.py<br/>pergunta -> tool (JSON)"]
+    INT --> FER["analista/ferramentas.py<br/>8 tools parametrizadas"]
+    INT -.->|"escape hatch"| SQL["analista/db.py<br/>SELECT validado"]
+    FER --> DB[("analista.db<br/>read-only")]
+    SQL --> DB
+    FER --> GRA["analista/graficos.py<br/>PNG"]
+    ING["analista/ingestao.py<br/>OFFLINE: CSV -> SQLite"] --> DB
+```
+
+- **Ingestion is offline**: `python -m analista.ingestao --csv <dir|arquivo>`
+  runs on the host, outside the container and outside the boot. The bot never
+  imports `ingestao` and never writes to the base; the artifact is mounted.
+- The artifact is atomic (`<saida>.tmp` + `os.replace`) and self-describing
+  (`meta` with `schema_version`, sources, hashes and totals). Swapping the base
+  needs no restart: the next query opens a new connection.
+- `interpretacao.responder()` sends the catalog + view schema to the LLM and
+  receives `{"acao": "ferramenta"|"sql"|"texto", ...}`. The model **never
+  computes**: it only picks the tool/args; SQLite does the arithmetic.
+- A failing tool/SQL goes back to the model once with the error; the second
+  failure becomes a request for clarification instead of a retry loop.
+- `consultar_sql` is the escape hatch: read-only connection, `SELECT`/`WITH`
+  only, single statement, table whitelist (`vendas`, `v_vendas`, `v_mensal`,
+  `meta`), row cap and a 10 s progress-handler timeout. The SQL is logged and
+  visible via `/sql`.
+- Charts are rendered only when asked (words like "grafico"/"evolucao" or the
+  inline button). `matplotlib` is imported on demand, so the bot starts fast and
+  still works with `GRAFICO_ENABLED=false`.
+- `periodo.py` resolves "2024", "marco de 2024", "1o trimestre de 2023",
+  "ultimos 30 dias", "de 01/03 a 15/04" and "tudo". Without an explicit year it
+  uses the **last year of the base**, not the current year.
+
 ## Configuration (environment)
 
 | Var | Meaning | Default |
@@ -62,6 +102,11 @@ flowchart LR
 | `TRANSCRIBE_MODEL` | OpenRouter multimodal model | `google/gemini-2.5-flash` |
 | `TRANSCRIBE_MAX_SEG` / `AUDIO_MAX_MB` | audio limits | `120` / `10` |
 | `LLM_FALLBACK` | LLM when deterministic parsing fails | `true` |
+| `ANALISTA_DB` | SQLite artifact read by the analista (read-only) | `$STATE_DIR/analista.db` |
+| `GRAFICO_ENABLED` | render PNG charts on demand | `true` |
+| `ANALISTA_MAX_LINHAS` / `ANALISTA_TIMEOUT_SQL` | row cap and SQL timeout (s) | `5000` / `10` |
+| `HISTORICO_TURNOS` | follow-up context kept per chat | `8` |
+| `ANALISTA_CSV` | default `--csv` for the offline ingestion | — |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_IDS` | secret (env_file); allowed list is required — without it the bot refuses every chat | — |
 | `OPENROUTER_API_KEY` | secret (`.secrets/openrouter.env`) | — |
 
@@ -77,10 +122,12 @@ text + deterministic parser still work.
 ```
 common/                          shared: config, log, Telegram, audio, LLM
 agenda/                          agenda agent (bot, parser, lembretes, agendador)
+analista/                        analyst agent + offline ingestion
 .opencode/agents/<agent>.md      persona/tone; `model:` optional (V2 frontmatter)
 .secrets/openrouter.env          shared OpenRouter key (audio + fallback)
 .secrets/<agent>/telegram.env    one bot/token per agent
 data/<agent>/                    state: lembretes.json, bot.log, bot.pid
+data/analista/analista.db        artifact generated offline (gitignored)
 docker-compose.prod.yml          VPS deploy: GHCR image, no build
 .github/workflows/               ci, publish (GHCR), deploy (SSH), retention
 ```
@@ -121,6 +168,22 @@ Agent packages run as `python -m <agente>` (host: `./.venv/bin/python -m <agente
 - `agendador.py` — scheduler thread (`Agendador`); `acordar()` on create/cancel.
 - `runtime.py` — LLM fallback contract for reminders (JSON object, revalidated).
 
+`analista/`:
+- `ingestao.py` — **offline** CSV → SQLite (`python -m analista.ingestao`); 12
+  canonical columns with aliases, atomic swap, `VACUUM`, `meta` table.
+- `db.py` — read-only connection (`mode=ro`, `query_only`), `schema_version`
+  check, guardrails for `validar_sql()`/`executar_sql()`.
+- `periodo.py` — pt-BR dates/intervals → `Periodo(de, ate)`; deterministic.
+- `ferramentas.py` — `info_base`, `resumo`, `serie`, `ranking`,
+  `distribuicao`, `comparar`, `tabela`, `consultar_sql` + `CATALOGO`/`executar`.
+- `interpretacao.py` — question → `{acao, ferramenta, args}`; executes the tool
+  and returns a `Resultado` (or plain text); feeds tool errors back once.
+- `formato.py` — pt-BR numbers and monospace tables for `<pre>`.
+- `resultado.py` — the `Resultado` dataclass shared by tools/formatters.
+- `graficos.py` — PNG (line, horizontal bar, comparison) with lazy matplotlib.
+- `conversa.py` — in-memory per-chat history for follow-ups.
+- `consultas.py` — CLI to run any tool without Telegram or LLM.
+
 ## Data model (`data/<agent>/lembretes.json`)
 
 ```json
@@ -134,6 +197,28 @@ Agent packages run as `python -m <agente>` (host: `./.venv/bin/python -m <agente
 `ativo=false` (cancel/conclude) is never notified; the scheduler re-reads the
 record right before sending.
 
+## Data model — analista (`data/analista/analista.db`)
+
+Canonical columns (CSV aliases in parentheses): `data` (`data_venda`),
+`id_origem` (`Id`, part of the PK with `equipe`), `equipe`, `vendedor`,
+`categoria` (`categoria_servico`), `servico` (`produto`/`descricao`),
+`quantidade`, `preco_unitario` (`valor`), `custo_unitario` (`custo`), `cliente`,
+`estado` (`uf`), `regiao`.
+
+- `vendas` — the raw rows, PK `(equipe, id_origem)`, so ingesting both the team
+  files and `relatorio_final.csv` is idempotent (`INSERT OR IGNORE`).
+- `v_vendas` — adds `receita`, `custo_total`, `margem`, `ano`, `mes`, `dia`,
+  `dia_semana`, `trimestre`. This is the only surface exposed to the LLM.
+- `v_mensal` — monthly rollup.
+- `meta` — `schema_version`, `gerado_em`, sources + sha256, row count, period
+  and totals. The bot refuses an artifact with a different `schema_version`.
+
+Numbers in this base: `receita = quantidade * preco_unitario`,
+`custo = quantidade * custo_unitario`, `margem` is **gross** (revenue − cost).
+There are no purchases, stock or returns; `cliente` holds repeated surnames and
+`Vinicius` appears in two teams — the persona warns about both instead of
+silently aggregating them.
+
 ## Docker (one container per agent)
 
 - `Dockerfile` — `python:3.12-slim` + venv; deps `requests`, `python-dateutil`,
@@ -142,6 +227,9 @@ record right before sending.
   image serves every agent; `BOT_AGENT` comes from the compose `environment`.
 - `docker-compose.yml` — `x-agente` anchor; non-secret config in `environment`,
   secrets via `env_file`, state via `./data/<agent>:/app/.state`.
+- The `analista` service mounts `./data/analista:/app/.state`; `analista.db` is
+  produced on the host and copied with `scp`. It is **never** baked into the
+  image (the GHCR package is public and the base is client data).
 - `docker-compose.prod.yml` — VPS variant: `image: ghcr.io/...` (no `build`),
   `TAG` from `.env`; same env/volume. See README "Deploy" for CI/CD.
 
@@ -159,6 +247,22 @@ docker compose up -d --build && docker compose logs -f agenda
 Nunca valide imports rodando `python -m agenda` com o token real: ele inicia o
 long-polling e a instancia viva leva `409 Conflict`. Use
 `python -c "import agenda.bot"` para verificar o grafo de imports.
+
+```bash
+# analista: ingestao offline (host, fora do container) e conferencia dos totais
+./.venv/bin/python -m analista.ingestao --csv ~/Downloads/relatorio-vendas-consolidado
+./.venv/bin/python -m analista.ingestao --inspecionar data/analista/analista.db
+
+# tools sem Telegram nem LLM
+./.venv/bin/python -m analista.consultas info_base
+./.venv/bin/python -m analista.consultas resumo periodo=2024
+./.venv/bin/python -m analista.consultas ranking dimensao=vendedor periodo=2024 top_n=5
+./.venv/bin/python -m analista.consultas serie metrica=receita granularidade=mensal --grafico /tmp/g.png
+```
+
+O gabarito da base atual: **117.085 linhas**, receita `1.014.928.594,05`, custo
+`710.521.008,72`, periodo `2022-05-30 .. 2025-05-29`. Se a ingestao imprimir
+outro total, a base ou o parser mudou.
 
 ## Notes
 

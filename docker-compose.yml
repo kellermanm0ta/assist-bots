@@ -35,3 +35,24 @@ services:
       LLM_FALLBACK: "true"
     volumes:
       - ./data/agenda:/app/.state
+
+  analista:
+    <<: *agente
+    container_name: assist-analista
+    env_file:
+      - ./.secrets/openrouter.env
+      - ./.secrets/analista/telegram.env
+    environment:
+      BOT_AGENT: analista
+      TIMEZONE: America/Sao_Paulo
+      STATE_DIR: /app/.state
+      AUDIO_ENABLED: "true"
+      TRANSCRIBE_MODEL: google/gemini-2.5-flash
+      TRANSCRIBE_MAX_SEG: "120"
+      AUDIO_MAX_MB: "10"
+      GRAFICO_ENABLED: "true"
+      ANALISTA_MAX_LINHAS: "5000"
+    volumes:
+      # `analista.db` e gerado offline (python -m analista.ingestao) e montado
+      # aqui; o container so le. Ver README, "Analista de negocio".
+      - ./data/analista:/app/.state

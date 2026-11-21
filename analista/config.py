@@ -13,6 +13,13 @@ TIMEZONE = base.TIMEZONE
 TZ = base.TZ
 STATE_DIR = base.STATE_DIR
 
+# Capacidades comuns que os modulos do analista consomem como `config.X`.
+AUDIO_ENABLED = base.AUDIO_ENABLED
+TRANSCRIBE_MODEL = base.TRANSCRIBE_MODEL
+TRANSCRIBE_MAX_SEG = base.TRANSCRIBE_MAX_SEG
+AUDIO_MAX_MB = base.AUDIO_MAX_MB
+LLM_FALLBACK = base.LLM_FALLBACK
+
 # Artefato gerado por `python -m analista.ingestao` (fora do container).
 # O bot so abre em modo read-only; nunca escreve nem importa a ingestao.
 ANALISTA_DB = base.caminho("ANALISTA_DB", str(STATE_DIR / "analista.db"))

@@ -9,6 +9,7 @@ RUN python -m venv /app/.venv \
 
 COPY common ./common
 COPY agenda ./agenda
+COPY analista ./analista
 COPY .opencode/agents ./.opencode/agents
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 

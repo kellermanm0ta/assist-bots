@@ -38,3 +38,27 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  analista:
+    image: ghcr.io/kellermanm0ta/assist-bots:${TAG:-latest}
+    container_name: assist-analista
+    restart: unless-stopped
+    user: "1000:1000"
+    env_file:
+      - ./.secrets/openrouter.env
+      - ./.secrets/analista/telegram.env
+    environment:
+      BOT_AGENT: analista
+      TIMEZONE: America/Sao_Paulo
+      STATE_DIR: /app/.state
+      AUDIO_ENABLED: "true"
+      TRANSCRIBE_MODEL: google/gemini-2.5-flash
+      GRAFICO_ENABLED: "true"
+    volumes:
+      # analista.db vem por scp (gerado offline); nunca entra na imagem.
+      - ./data/analista:/app/.state
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
