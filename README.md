@@ -158,7 +158,7 @@ Periodos: `2024`, `marco de 2024`, `1o trimestre de 2023`, `ultimos 30 dias`,
 
 `/base`, `/resumo <periodo>`, `/ranking <dimensao> <periodo> [top_n]`,
 `/serie <metrica> <periodo>`, `/tabela <dimensao> <periodo>`, `/sql <select>`,
-`/grafico <pergunta>`, `/pizza <pergunta>`, `/limpar`, `/id`.
+`/grafico <pergunta>`, `/pizza <pergunta>`, `/limpar`, `/id`, `/start`, `/help`.
 
 Os comandos diretos nao chamam LLM (funcionam ate sem `OPENROUTER_API_KEY`) e
 servem de teste rapido. Cada resposta traz **um botao por tipo de grafico
@@ -172,13 +172,13 @@ Tabela: a tabela ja vai no texto.
 | comparacao de periodos | Barra, CSV |
 | resumo / info_base | CSV |
 
-### 5. Graficos
+### 4. Graficos
 
 | Tipo | Quando |
 |---|---|
 | `linha` | evolucao no tempo (serie) |
-| `barra` | ranking e comparacao entre categorias |
-| `comparacao` | dois periodos lado a lado |
+| `barra` | ranking e categorias (uma cor por barra, ate 40) |
+| `comparacao` | dois periodos lado a lado (duas barras) |
 | `pizza` / `rosca` | participacao, fatias, "share" |
 
 A pizza agrega a cauda em **"Outros"** contra o total do periodo (padrao: 10
@@ -194,13 +194,14 @@ Em `cliente` isso e o dado falando: 18.988 clientes, nenhum passa de ~1,4%, e a
 fatia "Outros" domina. Em `categoria` (3) ou `regiao` (5) a pizza fecha 100% e
 fica limpa.
 
-### 4. Sem Telegram: CLI das tools
+### 5. Sem Telegram: CLI das tools
 
 ```bash
 ./.venv/bin/python -m analista.consultas info_base
 ./.venv/bin/python -m analista.consultas resumo periodo=2024
 ./.venv/bin/python -m analista.consultas ranking dimensao=vendedor periodo=2024 top_n=5
 ./.venv/bin/python -m analista.consultas serie metrica=receita granularidade=mensal --grafico /tmp/g.png
+./.venv/bin/python -m analista.consultas distribuicao dimensao=servico --tipo pizza --grafico /tmp/p.png
 ```
 
 ### Limites e leitura correta dos dados
@@ -209,7 +210,7 @@ fica limpa.
   custo. Margem e **bruta**.
 - `cliente` guarda sobrenomes repetidos, nao um cadastro: ranking de cliente e
   indicativo.
-- `Vinicius` aparece em duas equipes e `Ana Julia`/`Ana Julia` com grafias
+- `Vinicius` aparece em duas equipes e `Ana Julia`/`Ana Júlia` com grafias
   diferentes; o agente avisa quando o recorte depende disso.
 - SQL livre e ultimo recurso, com whitelist de views, `LIMIT` e timeout.
 
@@ -223,7 +224,7 @@ analista/                        agente do analista + ingestao offline
 .secrets/openrouter.env          chave da OpenRouter (compartilhada)
 .secrets/<agente>/telegram.env   token do bot (um por agente)
 data/agenda/                     lembretes.json, bot.log, bot.pid
-data/analista/                   analista.db (gerado offline) e graficos/
+data/analista/                   analista.db (offline), graficos/ e export/
 ```
 
 **Nunca comite `.secrets/` nem `data/`**: o primeiro guarda a chave e o token,
@@ -237,13 +238,13 @@ o segundo guarda `chat_id`, lembretes e transcricoes pessoais. Ambos ja estao no
 | `BOT_AGENT` | pacote executado (`python -m <BOT_AGENT>`), carrega `.opencode/agents/<BOT_AGENT>.md` e nomeia o logger | nome do pacote |
 | `BOT_NAME` | nome exibido nas saudacoes (sobrepoe `bot_name:`) | `BOT_AGENT` capitalizado |
 | `TIMEZONE` | fuso dos horarios | `America/Sao_Paulo` |
-| `STATE_DIR` | estado do agente (lembretes.json / log / pid) | `data/<BOT_AGENT>` |
-| `HORA_PADRAO` | hora do atalho "todos os dias" | `08:00` |
-| `TOLERANCIA_MIN` | atraso maximo para notificar | `120` |
+| `STATE_DIR` | estado do agente (agenda: lembretes.json/log/pid; analista: analista.db/graficos/export) | `data/<BOT_AGENT>` |
+| `HORA_PADRAO` | agenda: hora do atalho "todos os dias" | `08:00` |
+| `TOLERANCIA_MIN` | agenda: atraso maximo para notificar | `120` |
 | `AUDIO_ENABLED` | aceita notas de voz/audio | `true` |
 | `TRANSCRIBE_MODEL` | modelo multimodal da OpenRouter | `google/gemini-2.5-flash` |
 | `TRANSCRIBE_MAX_SEG` / `AUDIO_MAX_MB` | limites do audio | `120` / `10` |
-| `LLM_FALLBACK` | usa LLM quando o parser falha | `true` |
+| `LLM_FALLBACK` | agenda: usa LLM quando o parser falha | `true` |
 | `ANALISTA_DB` | artefato SQLite lido pelo analista (read-only) | `$STATE_DIR/analista.db` |
 | `GRAFICO_ENABLED` | gera PNG sob pedido | `true` |
 | `GRAFICO_MAX_FATIAS` | fatias antes de agregar o resto em "Outros" | `10` |
@@ -253,8 +254,9 @@ o segundo guarda `chat_id`, lembretes e transcricoes pessoais. Ambos ja estao no
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_IDS` | secret (env_file); a lista e obrigatoria — sem ela o bot recusa todo mundo | — |
 | `OPENROUTER_API_KEY` | secret (`.secrets/openrouter.env`) | — |
 
-Sem `OPENROUTER_API_KEY`, use `AUDIO_ENABLED=false` e `LLM_FALLBACK=false`: o bot
-continua funcionando por texto com o parser deterministico.
+Sem `OPENROUTER_API_KEY`: a agenda continua por texto com o parser deterministico
+(use `AUDIO_ENABLED=false` e `LLM_FALLBACK=false`); o analista so responde pelos
+comandos diretos (`/base`, `/resumo`, `/ranking`, `/serie`, `/tabela`, `/sql`).
 
 ## Rodar com Docker (recomendado)
 
@@ -274,6 +276,10 @@ docker compose logs -f agenda analista
 
 Um bot/token por agente no @BotFather. **Nunca** use o mesmo token em dois
 containers: o Telegram devolve `409 Conflict`.
+
+A imagem coloca `/app/.venv/bin` no `PATH`, entao
+`docker compose exec analista python -m analista.consultas info_base` ja usa as
+dependencias (sem precisar do caminho absoluto).
 
 ## Deploy (GitHub Actions → GHCR → VPS)
 
@@ -300,13 +306,13 @@ GHCR e publico). Copie uma vez, e de novo a cada atualizacao da base:
 
 ```bash
 scp data/analista/analista.db \
-  deploy@SEU_HOST:~/assist-bots/data/analista/analista.db
+  USUARIO@SEU_HOST:~/assist-bots/data/analista/analista.db
 ```
 
 O agente le a base a cada consulta, entao a troca vale na hora, sem restart.
 
-VPS (setup unico): usuario `deploy` no grupo `docker`, Docker Engine + compose v2,
-chave SSH, e `~/assist-bots/` com `data/agenda/`, `data/analista/`,
+VPS (setup unico): usuario do secret `VPS_USER` no grupo `docker`, Docker Engine
++ compose v2, chave SSH, e `~/assist-bots/` com `data/agenda/`, `data/analista/`,
 `.secrets/agenda/` e `.secrets/analista/`. O deploy grava essas pastas e um
 `.env` com a `TAG` da imagem.
 
@@ -374,7 +380,8 @@ kill "$(cat data/agenda/bot.pid)"      # parar
 
 ## Verificacao
 
-Nao ha suite de testes. Verificacao direta:
+Nao ha suite de testes; o CI roda smoke scripts (parser, imports, ingestao +
+tools + os cinco tipos de grafico). Verificacao direta:
 
 ```bash
 ./.venv/bin/python -m compileall -q common agenda analista

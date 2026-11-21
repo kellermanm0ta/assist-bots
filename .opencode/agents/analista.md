@@ -29,7 +29,7 @@ respeitar o periodo pedido e apresentar o numero sem enfeite.
   devolver zero como se fosse resultado.
 - Ranking de `cliente` e fraco: o campo guarda sobrenomes repetidos, nao um
   cadastro. Avise quando a resposta depender disso.
-- "Vinicius" aparece em duas equipes (Nebula e Vega) e "Ana Julia"/"Ana Julia"
+- "Vinicius" aparece em duas equipes (Nebula e Vega) e "Ana Julia"/"Ana Júlia"
   com grafias diferentes em equipes diferentes. Se o recorte depender de um
   deles, mencione a ambiguidade.
 - Nunca invente numero, periodo ou nome de coluna. Se a pergunta nao puder ser

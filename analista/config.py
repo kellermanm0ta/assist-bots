@@ -32,7 +32,6 @@ HISTORICO_TURNOS = base.inteiro("HISTORICO_TURNOS", 8)
 # Graficos.
 GRAFICO_ENABLED = base.flag("GRAFICO_ENABLED", True)
 GRAFICO_DIR = base.caminho("GRAFICO_DIR", str(STATE_DIR / "graficos"))
-GRAFICO_MAX_PONTOS = base.inteiro("GRAFICO_MAX_PONTOS", 60)
 GRAFICO_MAX_FATIAS = base.inteiro("GRAFICO_MAX_FATIAS", 10)
 
 # Relogio do fuso configurado (naive), usado por periodo/ferramentas.

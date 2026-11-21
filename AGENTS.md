@@ -8,8 +8,9 @@ Telegram assistant bots. Two agents share one image and one repo:
   questions (revenue, cost, margin, rankings, evolution) with text and charts.
 
 Same architecture as `persona-bots`: environment config, native long-polling,
-`data/<agent>/` state, one container per agent. There is **no test suite, linter
-or build step** — verification is running the pieces directly.
+`data/<agent>/` state, one container per agent. There is **no test suite or
+linter** — verification is running the pieces directly, and `ci.yml` runs smoke
+scripts (parser, import graph, ingestion + tools + charts on a fixture base).
 
 ## Repository layout
 
@@ -104,13 +105,13 @@ flowchart LR
 | `BOT_AGENT` | package to run (`python -m <BOT_AGENT>`); loads `.opencode/agents/<BOT_AGENT>.md`; logger name | package name |
 | `BOT_NAME` | display name used in greetings (overrides `bot_name:`) | `BOT_AGENT` capitalized |
 | `TIMEZONE` | zone for all schedules | `America/Sao_Paulo` |
-| `STATE_DIR` | agent state (`lembretes.json`, `bot.log`, `bot.pid`) | `data/<BOT_AGENT>` |
-| `HORA_PADRAO` | time for "todos os dias" shortcut | `08:00` |
-| `TOLERANCIA_MIN` | max lateness still notified | `120` |
+| `STATE_DIR` | agent state: `lembretes.json`/log/pid (agenda), `analista.db`/`graficos/`/`export/` (analista) | `data/<BOT_AGENT>` |
+| `HORA_PADRAO` | agenda: time for "todos os dias" shortcut | `08:00` |
+| `TOLERANCIA_MIN` | agenda: max lateness still notified | `120` |
 | `AUDIO_ENABLED` | accept voice/audio messages | `true` |
 | `TRANSCRIBE_MODEL` | OpenRouter multimodal model | `google/gemini-2.5-flash` |
 | `TRANSCRIBE_MAX_SEG` / `AUDIO_MAX_MB` | audio limits | `120` / `10` |
-| `LLM_FALLBACK` | LLM when deterministic parsing fails | `true` |
+| `LLM_FALLBACK` | agenda: LLM when deterministic parsing fails | `true` |
 | `ANALISTA_DB` | SQLite artifact read by the analista (read-only) | `$STATE_DIR/analista.db` |
 | `GRAFICO_ENABLED` | render PNG charts on demand | `true` |
 | `GRAFICO_MAX_FATIAS` | slices before aggregating the rest into "Outros" | `10` |
@@ -137,7 +138,7 @@ analista/                        analyst agent + offline ingestion
 .secrets/openrouter.env          shared OpenRouter key (audio + fallback)
 .secrets/<agent>/telegram.env    one bot/token per agent
 data/<agent>/                    state: lembretes.json, bot.log, bot.pid
-data/analista/analista.db        artifact generated offline (gitignored)
+data/analista/                   analista.db (offline) + graficos/ + export/ (gitignored)
 docker-compose.prod.yml          VPS deploy: GHCR image, no build
 .github/workflows/               ci, publish (GHCR), deploy (SSH), retention
 ```
@@ -191,7 +192,8 @@ Agent packages run as `python -m <agente>` (host: `./.venv/bin/python -m <agente
 - `formato.py` — pt-BR numbers and monospace tables for `<pre>`.
 - `resultado.py` — the `Resultado` dataclass shared by tools/formatters.
 - `graficos.py` — PNG (`linha`, `barra`, `comparacao`, `pizza`/`rosca`) with
-  lazy matplotlib, `pode_pizza()`, `cobertura` and "Outros" aggregation.
+  lazy matplotlib, one colour per bar, `tipos_elegiveis()`, `pode_pizza()`,
+  `cobertura` and "Outros" aggregation.
 - `conversa.py` — in-memory per-chat history for follow-ups.
 - `consultas.py` — CLI to run any tool without Telegram or LLM.
 
@@ -233,7 +235,10 @@ silently aggregating them.
 ## Docker (one container per agent)
 
 - `Dockerfile` — `python:3.12-slim` + venv; deps `requests`, `python-dateutil`,
-  `tzdata`. No ffmpeg/whisper: audio goes to OpenRouter.
+  `tzdata`, `matplotlib`. No ffmpeg/whisper: audio goes to OpenRouter.
+- The image puts `/app/.venv/bin` in `PATH` and `MPLCONFIGDIR=/app/.state/.mpl`,
+  so `docker compose exec <agent> python ...` uses the venv and the chart cache
+  lands in the volume. The entrypoint still uses the absolute path.
 - `docker-entrypoint.sh` — `exec`s `python -m $BOT_AGENT` as PID 1, so the same
   image serves every agent; `BOT_AGENT` comes from the compose `environment`.
 - `docker-compose.yml` — `x-agente` anchor; non-secret config in `environment`,
@@ -244,10 +249,10 @@ silently aggregating them.
 - `docker-compose.prod.yml` — VPS variant: `image: ghcr.io/...` (no `build`),
   `TAG` from `.env`; same env/volume. See README "Deploy" for CI/CD.
 
-## Verification (no test suite)
+## Verification (no test suite; smoke in CI)
 
 ```bash
-./.venv/bin/python -m compileall -q common agenda
+./.venv/bin/python -m compileall -q common agenda analista
 ./.venv/bin/python -c "import agenda.parser; from datetime import datetime; \
  print(agenda.parser.interpretar('me lembre em 18/11 as 8h de tomar remedio, repetir todos os dias', datetime(2026,11,17,22,0)))"
 ./.venv/bin/python -m common.transcricao teste.ogg
@@ -269,6 +274,7 @@ long-polling e a instancia viva leva `409 Conflict`. Use
 ./.venv/bin/python -m analista.consultas resumo periodo=2024
 ./.venv/bin/python -m analista.consultas ranking dimensao=vendedor periodo=2024 top_n=5
 ./.venv/bin/python -m analista.consultas serie metrica=receita granularidade=mensal --grafico /tmp/g.png
+./.venv/bin/python -m analista.consultas distribuicao dimensao=servico --tipo pizza --grafico /tmp/p.png
 ```
 
 O gabarito da base atual: **117.085 linhas**, receita `1.014.928.594,05`, custo
