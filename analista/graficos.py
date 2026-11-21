@@ -11,6 +11,7 @@ sobrescrito por `gerar(..., tipo="pizza")` (botao e comandos).
 """
 from __future__ import annotations
 
+import os
 import secrets
 import time
 from pathlib import Path
@@ -36,6 +37,9 @@ class ErroGrafico(RuntimeError):
 def _pyplot():
     global _plt
     if _plt is None:
+        # Sem HOME de escrita (uid 1000 no container), o matplotlib cai num cache
+        # temporario a cada processo e loga aviso. Fixamos no volume do agente.
+        os.environ.setdefault("MPLCONFIGDIR", str(config.STATE_DIR / ".mpl"))
         import matplotlib
 
         matplotlib.use("Agg")
@@ -242,6 +246,7 @@ def gerar(res: Resultado, caminho: Path | None = None, tipo: str | None = None) 
     if not config.GRAFICO_ENABLED:
         raise ErroGrafico("graficos desativados (GRAFICO_ENABLED=false)")
 
+    caminho = Path(caminho) if caminho else None
     espec = dict(res.grafico or {})
     if not espec or not espec.get("tipo"):
         raise ErroGrafico("este resultado nao tem grafico sugerido")
