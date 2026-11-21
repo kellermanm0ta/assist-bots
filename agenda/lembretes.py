@@ -14,9 +14,9 @@ import secrets
 import threading
 from datetime import datetime
 
-import config
-import logsetup
-from parser import normalizar
+from agenda import config
+from agenda.parser import normalizar
+from common import logsetup
 
 log = logsetup.get_logger("lembretes")
 
@@ -29,7 +29,7 @@ def agora_iso() -> str:
 
 
 def _agora() -> datetime:
-    return datetime.now(config.TZ).replace(tzinfo=None) if config.TZ else datetime.now()
+    return config.agora()
 
 
 def _load() -> list:

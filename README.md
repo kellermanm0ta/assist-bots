@@ -7,17 +7,31 @@ e recorrencias (diaria, semanal, mensal, por intervalo).
 Mesma arquitetura do `persona-bots`: configuracao por ambiente, long-polling
 nativo, estado em `data/<agente>/` e um container por agente.
 
-## Como funciona
+## Estrutura do repositorio
+
+Um pacote por agente; o que e comum fica em `common/` e nunca conhece regra de
+negocio:
 
 ```
-telegram_bot.py (long-polling)
-   |  texto  -> parser.py (deterministico)  --falhou--> runtime.py (LLM)
-   |  audio  -> transcricao.py (OpenRouter Gemini) -> parser.py
+common/    config, log, cliente Telegram, audio, cliente LLM
+agenda/    o que entende "lembrete": bot, parser, lembretes, agendador
+```
+
+Cada pacote tem `config.py` (chama `common.config.iniciar(<agente>)` no import) e
+`bot.py` com `main()`. O entrypoint e sempre `python -m <agente>`; um agente
+nunca importa o pacote do outro.
+
+## Como funciona (agenda)
+
+```
+agenda/bot.py (long-polling)
+   |  texto  -> agenda/parser.py (deterministico)  --falhou--> agenda/runtime.py
+   |  audio  -> common/transcricao.py (OpenRouter) -> agenda/parser.py
    v
-lembretes.py (data/<agente>/lembretes.json, escrita atomica + Lock)
+agenda/lembretes.py (data/<agente>/lembretes.json, escrita atomica + Lock)
    ^
    |  proxima ocorrencia (dateutil.rrule)
-agendador.py (thread) --venceu--> telegram_api.send("⏰ ...")
+agenda/agendador.py (thread) --venceu--> common/telegram_api.send("⏰ ...")
 ```
 
 - **Parser deterministico** entende os formatos documentados abaixo, sem custo
@@ -70,6 +84,8 @@ lembretes do proprio chat.
 ## Layout
 
 ```
+common/                          config, log, Telegram, audio, LLM
+agenda/                          agente da agenda
 .opencode/agents/agenda.md       persona/tom do agente
 .secrets/openrouter.env          chave da OpenRouter (compartilhada)
 .secrets/agenda/telegram.env     token do bot (um por agente)
@@ -84,10 +100,10 @@ o segundo guarda `chat_id`, lembretes e transcricoes pessoais. Ambos ja estao no
 
 | Var | Significado | Default |
 |---|---|---|
-| `AGENT` | carrega `.opencode/agents/<AGENT>.md` e nomeia o logger | `agenda` |
-| `BOT_NAME` | nome exibido nas saudacoes (sobrepoe `bot_name:`) | `AGENT` capitalizado |
+| `BOT_AGENT` | pacote executado (`python -m <BOT_AGENT>`), carrega `.opencode/agents/<BOT_AGENT>.md` e nomeia o logger | nome do pacote |
+| `BOT_NAME` | nome exibido nas saudacoes (sobrepoe `bot_name:`) | `BOT_AGENT` capitalizado |
 | `TIMEZONE` | fuso dos horarios | `America/Sao_Paulo` |
-| `STATE_DIR` | lembretes.json / log / pid | `data/<AGENT>` |
+| `STATE_DIR` | estado do agente (lembretes.json / log / pid) | `data/<BOT_AGENT>` |
 | `HORA_PADRAO` | hora do atalho "todos os dias" | `08:00` |
 | `TOLERANCIA_MIN` | atraso maximo para notificar | `120` |
 | `AUDIO_ENABLED` | aceita notas de voz/audio | `true` |
@@ -197,10 +213,11 @@ kill "$(cat data/agenda/bot.pid)"      # parar
 Nao ha suite de testes. Verificacao direta:
 
 ```bash
-./.venv/bin/python -c "import parser; from datetime import datetime; \
- print(parser.interpretar('me lembre todos os dias de tomar remedio', datetime(2026,11,17,22,0)))"
-./.venv/bin/python transcricao.py teste.ogg
-./.venv/bin/python telegram_bot.py
+./.venv/bin/python -m compileall -q common agenda
+./.venv/bin/python -c "import agenda.parser; from datetime import datetime; \
+ print(agenda.parser.interpretar('me lembre todos os dias de tomar remedio', datetime(2026,11,17,22,0)))"
+./.venv/bin/python -m common.transcricao teste.ogg
+./.venv/bin/python -m agenda    # sobe o polling (nao rode com o bot ja ativo)
 ```
 
 `data/agenda/lembretes.json` guarda tudo; no Docker os logs vao para

@@ -13,8 +13,7 @@ import sys
 
 import requests
 
-import config
-import logsetup
+from common import config, logsetup
 
 log = logsetup.get_logger("transcricao")
 
@@ -66,7 +65,7 @@ def transcrever(dados: bytes, formato: str = "ogg") -> str:
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("uso: python transcricao.py <arquivo-de-audio>", file=sys.stderr)
+        print("uso: python -m common.transcricao <arquivo-de-audio>", file=sys.stderr)
         sys.exit(2)
     caminho = sys.argv[1]
     fmt = caminho.rsplit(".", 1)[-1].lower() if "." in caminho else "ogg"

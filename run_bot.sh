@@ -3,8 +3,8 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 # Config da instancia (host). Em Docker isso vem do docker-compose.
-export AGENT="${AGENT:-agenda}"
-export STATE_DIR="${STATE_DIR:-data/$AGENT}"
+export BOT_AGENT="${BOT_AGENT:-agenda}"
+export STATE_DIR="${STATE_DIR:-data/$BOT_AGENT}"
 export TIMEZONE="${TIMEZONE:-America/Sao_Paulo}"
 
 mkdir -p "$STATE_DIR"
@@ -24,11 +24,11 @@ set -a
 if [ -f ./.secrets/openrouter.env ]; then
   . ./.secrets/openrouter.env
 fi
-if [ -f "./.secrets/$AGENT/telegram.env" ]; then
-  . "./.secrets/$AGENT/telegram.env"
+if [ -f "./.secrets/$BOT_AGENT/telegram.env" ]; then
+  . "./.secrets/$BOT_AGENT/telegram.env"
 elif [ -f ./.secrets/telegram.env ]; then
   . ./.secrets/telegram.env
 fi
 set +a
 echo $$ > "$PIDFILE"
-exec "$PWD/.venv/bin/python" telegram_bot.py >> "$STATE_DIR/bot.log" 2>&1
+exec "$PWD/.venv/bin/python" -m "$BOT_AGENT" >> "$STATE_DIR/bot.log" 2>&1

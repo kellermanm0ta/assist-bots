@@ -24,7 +24,7 @@ from datetime import date, datetime, time, timedelta
 
 from dateutil import rrule
 
-import config
+from agenda import config
 
 DIAS = {
     "segunda": "MO",

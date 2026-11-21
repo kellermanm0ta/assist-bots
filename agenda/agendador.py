@@ -12,11 +12,9 @@ from __future__ import annotations
 import threading
 from datetime import datetime
 
-import config
-import lembretes
-import logsetup
-import telegram_api
-from parser import formatar, proxima_ocorrencia
+from agenda import config, lembretes
+from agenda.parser import formatar, proxima_ocorrencia
+from common import logsetup, telegram_api
 
 log = logsetup.get_logger("agendador")
 
@@ -104,4 +102,4 @@ class Agendador(threading.Thread):
 
 
 def _agora() -> datetime:
-    return datetime.now(config.TZ).replace(tzinfo=None) if config.TZ else datetime.now()
+    return config.agora()

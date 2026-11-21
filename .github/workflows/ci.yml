@@ -24,8 +24,9 @@ jobs:
       - name: Smoke test do parser
         run: |
           python - <<'PY'
-          import parser
           from datetime import datetime
+
+          from agenda import parser
 
           # exemplo de referencia do README
           agora = datetime(2026, 11, 17, 22, 0)
@@ -47,6 +48,10 @@ jobs:
           assert r.primeira.isoformat() == "2026-11-30T08:00:00", r
           print("parser ok")
           PY
+
+      - name: Grafo de imports do agente
+        # Nao roda `python -m agenda` (iniciaria o long-polling); so importa.
+        run: python -c "import agenda.bot, agenda.agendador, agenda.runtime; print('imports ok')"
 
   docker:
     runs-on: ubuntu-latest

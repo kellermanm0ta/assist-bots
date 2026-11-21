@@ -7,18 +7,34 @@ config, native long-polling, `data/<agent>/` state, one container per agent.
 There is **no test suite, linter or build step** — verification is running the
 pieces directly.
 
+## Repository layout
+
+One package per agent, shared capabilities at the root:
+
+```
+common/     config, logger, Telegram client, audio, LLM client — no business rules
+agenda/     everything that knows what a "lembrete" is
+analista/   (next agent) business analysis over SQLite
+```
+
+Each agent package has a `config.py` that calls `common.config.iniciar(<agente>)`
+on import and a `bot.py` with `main()`. The entrypoint is always
+`python -m <agente>`; modules import across packages by absolute path
+(`from common import telegram_api`), never the other agent's package.
+
 ## Architecture
 
 ```mermaid
 flowchart LR
-    TG["telegram_bot.py<br/>long-polling"] --> TXT["parser.py<br/>deterministico"]
-    TG --> AUD["transcricao.py<br/>OpenRouter Gemini"]
+    TG["agenda/bot.py<br/>long-polling"] --> TXT["agenda/parser.py<br/>deterministico"]
+    TG --> AUD["common/transcricao.py<br/>OpenRouter Gemini"]
     AUD --> TXT
-    TXT -.->|"falhou"| RT["runtime.py<br/>LLM fallback"]
-    TXT --> LEM["lembretes.py<br/>lembretes.json + Lock"]
+    TXT -.->|"falhou"| RT["agenda/runtime.py<br/>LLM fallback"]
+    TXT --> LEM["agenda/lembretes.py<br/>lembretes.json + Lock"]
     RT --> LEM
-    AGD["agendador.py<br/>thread + rrule"] --> LEM
-    AGD --> API["telegram_api.py<br/>send"]
+    RT --> LLM["common/llm.py<br/>cliente JSON"]
+    AGD["agenda/agendador.py<br/>thread + rrule"] --> LEM
+    AGD --> API["common/telegram_api.py<br/>send"]
 ```
 
 - `parser.interpretar()` is deterministic and never persists; it returns a
@@ -36,10 +52,10 @@ flowchart LR
 
 | Var | Meaning | Default |
 |---|---|---|
-| `AGENT` | loads `.opencode/agents/<AGENT>.md`; logger name | `agenda` |
-| `BOT_NAME` | display name used in greetings (overrides `bot_name:`) | `AGENT` capitalized |
+| `BOT_AGENT` | package to run (`python -m <BOT_AGENT>`); loads `.opencode/agents/<BOT_AGENT>.md`; logger name | package name |
+| `BOT_NAME` | display name used in greetings (overrides `bot_name:`) | `BOT_AGENT` capitalized |
 | `TIMEZONE` | zone for all schedules | `America/Sao_Paulo` |
-| `STATE_DIR` | lembretes.json / bot.log / bot.pid | `data/<AGENT>` |
+| `STATE_DIR` | agent state (`lembretes.json`, `bot.log`, `bot.pid`) | `data/<BOT_AGENT>` |
 | `HORA_PADRAO` | time for "todos os dias" shortcut | `08:00` |
 | `TOLERANCIA_MIN` | max lateness still notified | `120` |
 | `AUDIO_ENABLED` | accept voice/audio messages | `true` |
@@ -49,33 +65,51 @@ flowchart LR
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_IDS` | secret (env_file); allowed list is required — without it the bot refuses every chat | — |
 | `OPENROUTER_API_KEY` | secret (`.secrets/openrouter.env`) | — |
 
+`BOT_AGENT` is deliberately **not** called `AGENT`: the ambient environment of
+CI and agent runners often sets `AGENT=1`, which silently selected the wrong
+secret directory.
+
 With no `OPENROUTER_API_KEY`, set `AUDIO_ENABLED=false` and `LLM_FALLBACK=false`;
 text + deterministic parser still work.
 
 ## Layout
 
 ```
+common/                          shared: config, log, Telegram, audio, LLM
+agenda/                          agenda agent (bot, parser, lembretes, agendador)
 .opencode/agents/<agent>.md      persona/tone; `model:` optional (V2 frontmatter)
 .secrets/openrouter.env          shared OpenRouter key (audio + fallback)
 .secrets/<agent>/telegram.env    one bot/token per agent
-data/<agent>/                    lembretes.json, bot.log, bot.pid
+data/<agent>/                    state: lembretes.json, bot.log, bot.pid
 docker-compose.prod.yml          VPS deploy: GHCR image, no build
 .github/workflows/               ci, publish (GHCR), deploy (SSH), retention
 ```
 
-`config.py` loads `.secrets/openrouter.env` and `.secrets/<AGENT>/telegram.env`
-(plus `.secrets/telegram.env` fallback) at import, so a plain
-`./.venv/bin/python telegram_bot.py` works if the files exist.
+`common/config.py` loads `.secrets/openrouter.env` at import and
+`.secrets/<BOT_AGENT>/telegram.env` (plus `.secrets/telegram.env` fallback)
+inside `iniciar()`, so `./.venv/bin/python -m agenda` works if the files exist.
 
 ## Core scripts
 
-All Python in repo root; host runs use `./.venv/bin/python <script>`.
+Agent packages run as `python -m <agente>` (host: `./.venv/bin/python -m <agente>`).
 
-- `config.py` — env parsing and secret loading; computes `TZ` (`ZoneInfo`).
-- `telegram_api.py` — Bot API client: `api`, `send`, `typing`, `download_file`,
-  `editar`/`responder_callback` (inline buttons), `redact` (token never leaks
-  into logs).
-- `telegram_bot.py` — long-poll (`message` + `callback_query`); commands
+`common/`:
+- `config.py` — `BASE`, `iniciar(agente)`, env helpers (`flag`/`inteiro`/`texto`/
+  `caminho`), secret loading, `agora()`, `TZ` (`ZoneInfo`).
+- `telegram_api.py` — Bot API client: `api`, `send`, `send_photo`,
+  `send_document`, `typing`, `download_file`, `editar`/`responder_callback`
+  (inline buttons), `escape`, `redact`; token read lazily so import order never
+  matters.
+- `transcricao.py` — OpenRouter chat completions with `input_audio` base64
+  (`ogg`); prompt fixed to literal pt-BR transcription.
+- `llm.py` — OpenRouter JSON client (`chamar_json`), agent frontmatter reader,
+  `bot_name()`/`model_for()`.
+- `logsetup.py` — stdlib logging to stdout; logger `<BOT_AGENT>.*`.
+
+`agenda/`:
+- `config.py` — `HORA_PADRAO`, `TOLERANCIA_MIN`, `LEMBRETES_FILE`; re-exports
+  the common knobs (`TZ`, `AUDIO_ENABLED`, ...) so the package keeps `config.X`.
+- `bot.py` — long-poll (`message` + `callback_query`); commands
   `/start` `/help` `/id` `/listar` `/cancelar` `/apagar_inativos` (preview with
   Apagar/Cancelar buttons); text and `voice`/`audio` messages processed in
   worker threads (one message at a time per chat).
@@ -85,11 +119,7 @@ All Python in repo root; host runs use `./.venv/bin/python <script>`.
   `difflib` fuzzy; soft-delete keeps history; `apagar_inativos()` purges
   `ativo: false` for good (scoped to one chat when `chat_id` is given).
 - `agendador.py` — scheduler thread (`Agendador`); `acordar()` on create/cancel.
-- `transcricao.py` — OpenRouter chat completions with `input_audio` base64
-  (`ogg`); prompt fixed to literal pt-BR transcription.
-- `runtime.py` — LLM fallback (JSON object, revalidated), agent frontmatter
-  reader, `bot_name()`/`model_for()`.
-- `logsetup.py` — stdlib logging to stdout; logger `<AGENT>.*`.
+- `runtime.py` — LLM fallback contract for reminders (JSON object, revalidated).
 
 ## Data model (`data/<agent>/lembretes.json`)
 
@@ -108,7 +138,8 @@ record right before sending.
 
 - `Dockerfile` — `python:3.12-slim` + venv; deps `requests`, `python-dateutil`,
   `tzdata`. No ffmpeg/whisper: audio goes to OpenRouter.
-- `docker-entrypoint.sh` — `exec`s `telegram_bot.py` as PID 1.
+- `docker-entrypoint.sh` — `exec`s `python -m $BOT_AGENT` as PID 1, so the same
+  image serves every agent; `BOT_AGENT` comes from the compose `environment`.
 - `docker-compose.yml` — `x-agente` anchor; non-secret config in `environment`,
   secrets via `env_file`, state via `./data/<agent>:/app/.state`.
 - `docker-compose.prod.yml` — VPS variant: `image: ghcr.io/...` (no `build`),
@@ -117,12 +148,17 @@ record right before sending.
 ## Verification (no test suite)
 
 ```bash
-./.venv/bin/python -c "import parser; from datetime import datetime; \
- print(parser.interpretar('me lembre em 18/11 as 8h de tomar remedio, repetir todos os dias', datetime(2026,11,17,22,0)))"
-./.venv/bin/python transcricao.py teste.ogg
-./.venv/bin/python telegram_bot.py
+./.venv/bin/python -m compileall -q common agenda
+./.venv/bin/python -c "import agenda.parser; from datetime import datetime; \
+ print(agenda.parser.interpretar('me lembre em 18/11 as 8h de tomar remedio, repetir todos os dias', datetime(2026,11,17,22,0)))"
+./.venv/bin/python -m common.transcricao teste.ogg
+./.venv/bin/python -m agenda          # sobe o polling de verdade (nao rode com o bot vivo)
 docker compose up -d --build && docker compose logs -f agenda
 ```
+
+Nunca valide imports rodando `python -m agenda` com o token real: ele inicia o
+long-polling e a instancia viva leva `409 Conflict`. Use
+`python -c "import agenda.bot"` para verificar o grafo de imports.
 
 ## Notes
 

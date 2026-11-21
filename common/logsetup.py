@@ -3,20 +3,25 @@
 
 No Docker aparece em `docker logs`; no host o `run_bot.sh` redireciona para
 `STATE_DIR/bot.log`. Nao ha gravacao de arquivo dentro da aplicacao.
+
+O nome do logger vem de `AGENT` no ambiente, que `common.config.iniciar()`
+normaliza. Nao importamos `config` aqui de proposito: assim o log funciona
+mesmo se este modulo for importado antes do config do agente.
 """
 import logging
+import os
 import sys
 
-import config
+_configurados: set[str] = set()
 
-_LOGGER_ROOT = config.AGENT
 
-_configured = False
+def _raiz() -> str:
+    return os.environ.get("BOT_AGENT", "").strip() or "assist"
 
 
 def setup_logging(level: int = logging.INFO) -> None:
-    global _configured
-    if _configured:
+    raiz = _raiz()
+    if raiz in _configurados:
         return
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(
@@ -25,13 +30,13 @@ def setup_logging(level: int = logging.INFO) -> None:
             datefmt="%Y-%m-%d %H:%M:%S",
         )
     )
-    root = logging.getLogger(_LOGGER_ROOT)
+    root = logging.getLogger(raiz)
     root.setLevel(level)
     root.addHandler(handler)
     root.propagate = False
-    _configured = True
+    _configurados.add(raiz)
 
 
 def get_logger(name: str) -> logging.Logger:
     setup_logging()
-    return logging.getLogger(f"{_LOGGER_ROOT}.{name}")
+    return logging.getLogger(f"{_raiz()}.{name}")

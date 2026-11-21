@@ -15,14 +15,10 @@ from datetime import datetime
 
 import requests
 
-import config
-import lembretes
-import logsetup
-import parser
-import runtime
-import telegram_api as tg
-import transcricao
-from agendador import Agendador
+from agenda import config, lembretes, parser, runtime
+from agenda.agendador import Agendador
+from common import llm, logsetup, transcricao
+from common import telegram_api as tg
 
 log = logsetup.get_logger("bot")
 
@@ -39,12 +35,12 @@ _agendador: Agendador | None = None
 
 
 def agora_local() -> datetime:
-    return datetime.now(config.TZ).replace(tzinfo=None) if config.TZ else datetime.now()
+    return config.agora()
 
 
 def build_help() -> str:
     return (
-        f"Sou {runtime.bot_name()}, sua agenda. Escreva ou mande um audio.\n\n"
+        f"Sou {llm.bot_name()}, sua agenda. Escreva ou mande um audio.\n\n"
         "Exemplos:\n"
         "  me lembre em 18/11 as 8h de tomar remedio\n"
         "  me lembre em 18/11 as 8h de academia todas as tercas\n"
@@ -423,7 +419,7 @@ _running = True
 def main() -> None:
     global _agendador
 
-    if not tg.TOKEN:
+    if not tg.token():
         log.info("ERRO: defina TELEGRAM_BOT_TOKEN (veja .secrets/agenda/telegram.env)")
         sys.exit(1)
 
@@ -436,7 +432,7 @@ def main() -> None:
     ativos = lembretes.ativos()
     log.info(
         "%s iniciado (agente=%s tz=%s audio=%s fallback=%s lembretes=%d)",
-        runtime.bot_name(),
+        llm.bot_name(),
         config.AGENT,
         config.TIMEZONE,
         "on" if config.AUDIO_ENABLED else "off",

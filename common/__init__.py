@@ -1,0 +1,1 @@
+"""Capacidades compartilhadas pelos agentes: config, log, Telegram, audio, LLM."""

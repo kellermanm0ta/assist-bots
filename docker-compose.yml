@@ -23,7 +23,7 @@ services:
       - ./.secrets/openrouter.env
       - ./.secrets/agenda/telegram.env
     environment:
-      AGENT: agenda
+      BOT_AGENT: agenda
       TIMEZONE: America/Sao_Paulo
       STATE_DIR: /app/.state
       HORA_PADRAO: "08:00"
