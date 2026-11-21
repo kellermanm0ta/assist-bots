@@ -1,0 +1,1 @@
+"""Agente analista: consultas de negocio sobre uma base SQLite gerada offline."""
